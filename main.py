@@ -4,7 +4,7 @@ import base64
 import os
 from typing import Dict, Any, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from reportlab.pdfgen import canvas
@@ -12,6 +12,14 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 import qrcode
 from PIL import Image
+
+# --- DATABASE INTEGRATION ---
+from sqlalchemy.orm import Session
+from database import engine, get_db, Base
+import models
+
+# Create the database tables automatically on startup
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Exam Cover API")
 
@@ -37,6 +45,25 @@ async def get_index():
         
     with open("index.html", "r") as f:
         return f.read()
+
+@app.get("/admin", response_class=HTMLResponse)
+async def get_admin_dashboard():
+    if not os.path.exists("admin.html"):
+        raise HTTPException(status_code=404, detail="admin.html not found in the root directory")
+    with open("admin.html", "r") as f:
+        return f.read()
+
+# --- DEBUG/ADMIN ENDPOINTS ---
+
+@app.get("/api/exams")
+async def list_exams(db: Session = Depends(get_db)):
+    exams = db.query(models.Exam).order_by(models.Exam.created_at.desc()).all()
+    return exams
+
+@app.get("/api/papers")
+async def list_papers(db: Session = Depends(get_db)):
+    papers = db.query(models.ScannedPaper).order_by(models.ScannedPaper.created_at.desc()).all()
+    return papers
 
 def convert_to_top_left(x: float, y_bottom_left: float, width: float, height: float) -> Dict[str, float]:
     """
@@ -131,7 +158,7 @@ def generate_pdf_in_memory(metadata: ExamMetadata, exam_id: str):
     return pdf_base64, layout_data
 
 @app.post("/api/generate-cover", response_model=ExamCoverResponse)
-async def generate_cover_endpoint(metadata: ExamMetadata):
+async def generate_cover_endpoint(metadata: ExamMetadata, db: Session = Depends(get_db)):
     try:
         # Generate Unique Exam ID
         short_uuid = str(uuid.uuid4())[:8]
@@ -139,6 +166,19 @@ async def generate_cover_endpoint(metadata: ExamMetadata):
         
         # Generate PDF and layout data
         pdf_base64, layout_data = generate_pdf_in_memory(metadata, exam_id)
+        
+        # Save Exam and Coordinates to Database
+        db_exam = models.Exam(
+            id=exam_id,
+            course_code=metadata.course_code,
+            course_name=metadata.course_name,
+            instructor_name=metadata.instructor_name,
+            question_count=metadata.question_count,
+            layout_data=layout_data
+        )
+        db.add(db_exam)
+        db.commit()
+        db.refresh(db_exam)
         
         return ExamCoverResponse(
             exam_id=exam_id,

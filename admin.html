@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hackathon Admin Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; }
+        h1 { color: #343a40; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; }
+        h2 { color: #495057; margin-top: 30px; }
+        table { width: 100%; border-collapse: collapse; background: white; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: #e9ecef; color: #495057; }
+        tr:hover { background-color: #f1f3f5; }
+        .status-processing { color: #f0ad4e; font-weight: bold; }
+        .status-completed { color: #5cb85c; font-weight: bold; }
+        .status-needs_review { color: #d9534f; font-weight: bold; }
+        .nav-links { margin-bottom: 20px; }
+        .nav-links a { margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Hackathon Admin Dashboard</h1>
+    
+    <div class="nav-links">
+        <a href="/">← Back to Generator</a>
+        <a href="/docs">Swagger API Docs</a>
+    </div>
+
+    <section id="exams-section">
+        <h2>Created Exams</h2>
+        <table id="exams-table">
+            <thead>
+                <tr>
+                    <th>Exam ID</th>
+                    <th>Course</th>
+                    <th>Instructor</th>
+                    <th>Questions</th>
+                    <th>Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated by JS -->
+            </tbody>
+        </table>
+    </section>
+
+    <section id="papers-section">
+        <h2>Scanned Papers</h2>
+        <table id="papers-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Exam ID</th>
+                    <th>Student #</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated by JS -->
+            </tbody>
+        </table>
+    </section>
+</div>
+
+<script>
+    async function fetchData() {
+        try {
+            // Fetch Exams
+            const examsRes = await fetch('/api/exams');
+            const exams = await examsRes.json();
+            const examsBody = document.querySelector('#exams-table tbody');
+            examsBody.innerHTML = exams.map(exam => `
+                <tr>
+                    <td><code>${exam.id}</code></td>
+                    <td>${exam.course_code} - ${exam.course_name}</td>
+                    <td>${exam.instructor_name}</td>
+                    <td>${exam.question_count}</td>
+                    <td>${new Date(exam.created_at).toLocaleString()}</td>
+                </tr>
+            `).join('');
+
+            // Fetch Papers
+            const papersRes = await fetch('/api/papers');
+            const papers = await papersRes.json();
+            const papersBody = document.querySelector('#papers-table tbody');
+            papersBody.innerHTML = papers.map(paper => `
+                <tr>
+                    <td>${paper.id}</td>
+                    <td><code>${paper.exam_id}</code></td>
+                    <td>${paper.student_number || '<i>Pending</i>'}</td>
+                    <td><span class="status-${paper.status.toLowerCase()}">${paper.status}</span></td>
+                    <td>${new Date(paper.created_at).toLocaleString()}</td>
+                </tr>
+            `).join('');
+
+        } catch (err) {
+            console.error("Failed to fetch dashboard data:", err);
+        }
+    }
+
+    fetchData();
+    // Refresh every 10 seconds for real-time feel
+    setInterval(fetchData, 10000);
+</script>
+
+</body>
+</html>
