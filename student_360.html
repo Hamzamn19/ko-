@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Students 360 - Apex Assessment Platform</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260516j" rel="stylesheet" />
+    <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body>
+    <div class="ambient-layer" aria-hidden="true">
+        <div class="aurora-layer" aria-hidden="true"></div>
+        <span class="ambient-orb orb-a"></span>
+        <span class="ambient-orb orb-b"></span>
+        <span class="ambient-orb orb-c"></span>
+    </div>
+
+    <div class="app-shell">
+        <aside id="app-nav" class="nav-panel glass-surface">
+            <div class="brand-box">
+                <div class="brand-badge">
+                    <span class="material-symbols-outlined">workspace_premium</span>
+                </div>
+                <div>
+                    <p class="brand-title">Apex Assessment Platform</p>
+                    <p class="brand-subtitle">Institutional Edition</p>
+                </div>
+            </div>
+
+            <button id="nav-close" class="icon-btn mobile-only" type="button" aria-label="Close navigation">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+
+            <nav class="nav-links">
+                <a class="nav-link" href="/admin">
+                    <span class="material-symbols-outlined">space_dashboard</span>
+                    <span>Dashboard</span>
+                </a>
+                <a class="nav-link" href="/">
+                    <span class="material-symbols-outlined">note_add</span>
+                    <span>Cover Generator</span>
+                </a>
+                <a class="nav-link" href="/scanner">
+                    <span class="material-symbols-outlined">scan</span>
+                    <span>Scanner</span>
+                </a>
+                <a class="nav-link" href="/student-360">
+                    <span class="material-symbols-outlined">groups</span>
+                    <span>Students 360</span>
+                </a>
+            </nav>
+
+            <div class="nav-footer">
+                <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">Student Analytics</p>
+                <p class="mt-1 text-sm font-bold">Profiles, topic analytics, and exam trajectory.</p>
+            </div>
+        </aside>
+
+        <section class="workspace">
+            <header class="top-shell glass-surface">
+                <div class="top-actions">
+                    <button id="nav-toggle" class="icon-btn mobile-nav-toggle" type="button" aria-label="Open navigation">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <div class="top-meta">
+                        <span class="page-kicker">Student Intelligence</span>
+                        <span class="page-title">Student Registry and 360 Profiles</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <button class="ghost-btn" onclick="document.getElementById('addStudentForm').scrollIntoView({ behavior: 'smooth' })" type="button">
+                        <span class="material-symbols-outlined">person_add</span>
+                        Register
+                    </button>
+                    <button class="icon-btn" onclick="toggleTheme()" type="button" aria-label="Toggle theme">
+                        <span id="theme-icon" class="material-symbols-outlined">light_mode</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <section id="directoryView">
+                    <article id="addStudentForm" class="card glass-soft">
+                        <h2 class="card-title">Register or Update Student</h2>
+                        <p class="card-subtitle">Create a profile or overwrite an existing student by number.</p>
+
+                        <form id="studentForm" class="form-grid mt-4">
+                            <label class="field" style="grid-column: span 4;">
+                                <span class="field-label">Student Number</span>
+                                <input id="s_num" class="glass-input font-mono" type="text" placeholder="2026-X" required />
+                            </label>
+                            <label class="field" style="grid-column: span 4;">
+                                <span class="field-label">Name</span>
+                                <input id="s_name" class="glass-input" type="text" required />
+                            </label>
+                            <label class="field" style="grid-column: span 4;">
+                                <span class="field-label">Email</span>
+                                <input id="s_email" class="glass-input" type="email" />
+                            </label>
+                            <div style="grid-column: span 12;">
+                                <button type="submit" class="primary-btn h-[44px] px-5">Save Profile</button>
+                            </div>
+                        </form>
+                    </article>
+
+                    <article class="card glass-soft mt-4">
+                        <h2 class="card-title">Student Directory</h2>
+                        <p class="card-subtitle">Select any profile to inspect detailed analytics.</p>
+                        <div id="studentList" class="student-grid mt-4"></div>
+                    </article>
+                </section>
+
+                <section id="detailView" class="panel-grid hide">
+                    <article class="card glass-soft panel-span-4">
+                        <button class="ghost-btn mb-4" type="button" onclick="showDirectory()">
+                            <span class="material-symbols-outlined">arrow_back</span>
+                            Back
+                        </button>
+
+                        <div class="flex items-center gap-3">
+                            <div id="p_initials" class="w-14 h-14 rounded-2xl grid place-items-center font-black text-lg glass-soft"></div>
+                            <div>
+                                <p id="p_name" class="font-bold text-lg"></p>
+                                <p id="p_email" class="text-xs" style="color: var(--text-secondary);"></p>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 p-3 rounded-xl glass-soft">
+                            <p class="field-label">Student Number</p>
+                            <p id="p_num" class="font-mono text-sm font-bold"></p>
+                        </div>
+                    </article>
+
+                    <article class="card glass-soft panel-span-8">
+                        <h2 class="card-title">Topic Performance</h2>
+                        <p class="card-subtitle">Topic-wise scoring profile.</p>
+                        <div id="p_topics" class="grid md:grid-cols-2 gap-3 mt-4"></div>
+
+                        <h3 class="card-title mt-6">Exam History</h3>
+                        <div class="table-wrap mt-2">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Exam ID</th>
+                                        <th>Course</th>
+                                        <th>Points</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="p_history"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </section>
+            </main>
+        </section>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/static/Aurora.js?v=20260516e"></script>
+    <script src="/static/dashboard-ui.js?v=20260516i"></script>
+    <script>
+        const dirView = document.getElementById('directoryView');
+        const detView = document.getElementById('detailView');
+
+        function showDirectory() {
+            detView.classList.add('hide');
+            dirView.classList.remove('hide');
+        }
+
+        function showDetail() {
+            dirView.classList.add('hide');
+            detView.classList.remove('hide');
+        }
+
+        window.showDirectory = showDirectory;
+
+        async function loadStudents() {
+            const res = await fetch('/api/students');
+            const data = await res.json();
+            document.getElementById('studentList').innerHTML = data.map((s) => `
+                <button type="button" class="student-card glass-soft text-left" onclick="viewProfile('${s.student_number}')">
+                    <div class="flex items-center justify-between">
+                        <span class="w-10 h-10 rounded-xl grid place-items-center font-bold" style="background: rgba(107,108,255,0.16);">
+                            ${(s.name || 'S').substring(0, 2).toUpperCase()}
+                        </span>
+                        <span class="pill">${s.exam_count || 0} exams</span>
+                    </div>
+                    <div>
+                        <p class="font-bold text-base">${s.name || 'Unknown'}</p>
+                        <p class="font-mono text-xs" style="color: var(--text-secondary);">${s.student_number}</p>
+                    </div>
+                    <div>
+                        <p class="field-label">Total Score</p>
+                        <p class="kpi-value text-[1.5rem] leading-none">${s.total_score}</p>
+                    </div>
+                </button>
+            `).join('');
+        }
+
+        async function viewProfile(studentNum) {
+            const res = await fetch(`/api/students/${studentNum}`);
+            const data = await res.json();
+            const s = data.student;
+
+            document.getElementById('p_name').textContent = s.name || 'Anonymous';
+            document.getElementById('p_num').textContent = s.number;
+            document.getElementById('p_email').textContent = s.email || 'No Email';
+            document.getElementById('p_initials').textContent = (s.name || 'S').substring(0, 2).toUpperCase();
+
+            document.getElementById('p_history').innerHTML = data.history.map((h) => `
+                <tr>
+                    <td class="font-mono text-xs">${new Date(h.date).toLocaleDateString()}</td>
+                    <td class="font-mono text-xs">${h.exam_id.substring(0, 12)}...</td>
+                    <td>${h.course}</td>
+                    <td class="font-mono font-bold">${h.score}</td>
+                </tr>
+            `).join('');
+
+            document.getElementById('p_topics').innerHTML = Object.entries(data.topic_performance).map(([topic, stats]) => {
+                const percent = stats.max > 0 ? Math.round((stats.earned / stats.max) * 100) : 0;
+                return `
+                    <div class="card glass-soft">
+                        <div class="flex justify-between mb-2">
+                            <p class="font-semibold text-sm">${topic}</p>
+                            <p class="font-mono text-xs">${percent}%</p>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" style="width: ${percent}%;"></div>
+                        </div>
+                        <p class="text-xs mt-2" style="color: var(--text-secondary);">${stats.earned}/${stats.max} points</p>
+                    </div>
+                `;
+            }).join('') || '<div class="text-sm" style="color: var(--text-secondary);">No Data</div>';
+
+            showDetail();
+        }
+
+        window.viewProfile = viewProfile;
+
+        document.getElementById('studentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true;
+            btn.textContent = 'Updating...';
+
+            try {
+                await fetch('/api/students', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_number: document.getElementById('s_num').value,
+                        name: document.getElementById('s_name').value,
+                        email: document.getElementById('s_email').value
+                    })
+                });
+                e.target.reset();
+                loadStudents();
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Profile';
+            }
+        });
+
+        loadStudents();
+    </script>
+</body>
+</html>

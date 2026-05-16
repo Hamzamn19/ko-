@@ -9,35 +9,55 @@ class ProcessingStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
     NEEDS_REVIEW = "NEEDS_REVIEW"
 
+class Student(Base):
+    __tablename__ = "students"
+    
+    student_number = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    papers = relationship("ScannedPaper", back_populates="student")
+
 class Exam(Base):
     __tablename__ = "exams"
 
-    # We use the generated Unique Exam ID (e.g., PHY6202-a1b2c3d4) as the primary key
     id = Column(String, primary_key=True, index=True)
     course_code = Column(String, index=True)
     course_name = Column(String)
     instructor_name = Column(String)
     question_count = Column(Integer)
-    layout_data = Column(JSON) # Stores the top-left coordinates mapped during Phase 1
+    layout_data = Column(JSON)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     scanned_papers = relationship("ScannedPaper", back_populates="exam")
+    questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(String, ForeignKey("exams.id"))
+    question_number = Column(Integer)
+    topic = Column(String, nullable=True)
+    max_points = Column(Integer, default=10)
+
+    exam = relationship("Exam", back_populates="questions")
 
 class ScannedPaper(Base):
     __tablename__ = "scanned_papers"
 
     id = Column(Integer, primary_key=True, index=True)
     exam_id = Column(String, ForeignKey("exams.id"))
-    student_number = Column(String, nullable=True, index=True) # Populated by Puq.ai
+    student_number = Column(String, ForeignKey("students.student_number"), nullable=True, index=True)
     image_url = Column(String)
     status = Column(Enum(ProcessingStatus), default=ProcessingStatus.PROCESSING)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     exam = relationship("Exam", back_populates="scanned_papers")
+    student = relationship("Student", back_populates="papers")
     scores = relationship("Score", back_populates="scanned_paper")
 
 class Score(Base):
@@ -45,11 +65,8 @@ class Score(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scanned_paper_id = Column(Integer, ForeignKey("scanned_papers.id"))
-    
-    # This specifically enables individual question statistics (e.g., success rate for Q3)
     question_number = Column(Integer, index=True)
-    points_awarded = Column(Integer, nullable=True) # Nullable in case of NEED_REVIEW
-    confidence_score = Column(Float) # The confidence level returned from Puq.ai
+    points_awarded = Column(Integer, nullable=True)
+    confidence_score = Column(Float)
     
-    # Relationships
     scanned_paper = relationship("ScannedPaper", back_populates="scores")

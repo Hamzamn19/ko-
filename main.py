@@ -42,11 +42,16 @@ if not os.path.exists(STATIC_DIR):
 A4_WIDTH, A4_HEIGHT = A4
 MARGIN = 20 * mm
 
+class QuestionInput(BaseModel):
+    topic: str = "General"
+    max_points: int = 10
+
 class ExamMetadata(BaseModel):
     course_code: str = Field(..., example="PHY6202")
     course_name: str = Field(..., example="Advanced Physics")
     instructor_name: str = Field(..., example="Dr. Smith")
     question_count: int = Field(..., ge=1, le=20, example=10)
+    questions_data: List[QuestionInput] = Field(default=[], description="Optional topics per question")
 
 class ExamCoverResponse(BaseModel):
     exam_id: str
@@ -67,6 +72,13 @@ async def get_admin_dashboard():
     with open("admin.html", "r") as f:
         return f.read()
 
+@app.get("/scanner", response_class=HTMLResponse)
+async def get_scanner():
+    if not os.path.exists("scanner.html"):
+        raise HTTPException(status_code=404, detail="scanner.html not found")
+    with open("scanner.html", "r") as f:
+        return f.read()
+
 @app.get("/api/exams")
 async def list_exams(db: Session = Depends(get_db)):
     return db.query(models.Exam).order_by(models.Exam.created_at.desc()).all()
@@ -74,6 +86,90 @@ async def list_exams(db: Session = Depends(get_db)):
 @app.get("/api/papers")
 async def list_papers(db: Session = Depends(get_db)):
     return db.query(models.ScannedPaper).order_by(models.ScannedPaper.created_at.desc()).all()
+
+# --- STUDENT 360 ENDPOINTS ---
+
+class StudentInput(BaseModel):
+    student_number: str
+    name: str
+    email: str
+
+@app.get("/student-360", response_class=HTMLResponse)
+async def get_student_360():
+    if not os.path.exists("student_360.html"):
+        raise HTTPException(status_code=404, detail="student_360.html not found")
+    with open("student_360.html", "r") as f:
+        return f.read()
+
+@app.post("/api/students")
+async def create_student(student: StudentInput, db: Session = Depends(get_db)):
+    db_student = db.query(models.Student).filter(models.Student.student_number == student.student_number).first()
+    if db_student:
+        db_student.name = student.name
+        db_student.email = student.email
+    else:
+        db_student = models.Student(**student.dict())
+        db.add(db_student)
+    db.commit()
+    return {"status": "success", "student": student}
+
+@app.get("/api/students")
+async def list_students(db: Session = Depends(get_db)):
+    students = db.query(models.Student).all()
+    res = []
+    for s in students:
+        # Calculate overall avg
+        papers = db.query(models.ScannedPaper).filter(models.ScannedPaper.student_number == s.student_number).all()
+        total_score = sum([sum([score.points_awarded or 0 for score in p.scores]) for p in papers])
+        res.append({
+            "student_number": s.student_number,
+            "name": s.name,
+            "email": s.email,
+            "exam_count": len(papers),
+            "total_score": total_score
+        })
+    return res
+
+@app.get("/api/students/{student_number}")
+async def get_student_details(student_number: str, db: Session = Depends(get_db)):
+    student = db.query(models.Student).filter(models.Student.student_number == student_number).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    papers = db.query(models.ScannedPaper).filter(models.ScannedPaper.student_number == student_number).all()
+    history = []
+    topic_performance = {}
+    
+    for p in papers:
+        exam = db.query(models.Exam).filter(models.Exam.id == p.exam_id).first()
+        total_points = 0
+        for score in p.scores:
+            pts = score.points_awarded or 0
+            total_points += pts
+            
+            # Find topic
+            q = db.query(models.Question).filter(
+                models.Question.exam_id == p.exam_id, 
+                models.Question.question_number == score.question_number
+            ).first()
+            if q and q.topic:
+                if q.topic not in topic_performance:
+                    topic_performance[q.topic] = {"earned": 0, "max": 0}
+                topic_performance[q.topic]["earned"] += pts
+                topic_performance[q.topic]["max"] += q.max_points
+                
+        history.append({
+            "exam_id": p.exam_id,
+            "course": exam.course_code if exam else "Unknown",
+            "date": p.created_at,
+            "score": total_points
+        })
+        
+    return {
+        "student": {"number": student.student_number, "name": student.name, "email": student.email},
+        "history": history,
+        "topic_performance": topic_performance
+    }
 
 # --- HELPERS ---
 
@@ -264,7 +360,18 @@ async def generate_cover_endpoint(metadata: ExamMetadata, db: Session = Depends(
         c.showPage(); c.save(); buffer.seek(0)
         
         db_exam = models.Exam(id=exam_id, course_code=metadata.course_code, course_name=metadata.course_name, instructor_name=metadata.instructor_name, question_count=metadata.question_count, layout_data=layout_data)
-        db.add(db_exam); db.commit()
+        db.add(db_exam); db.commit(); db.refresh(db_exam)
+        
+        for i in range(metadata.question_count):
+            topic = "General"
+            max_p = 10
+            if i < len(metadata.questions_data):
+                topic = metadata.questions_data[i].topic
+                max_p = metadata.questions_data[i].max_points
+            db_question = models.Question(exam_id=exam_id, question_number=i+1, topic=topic, max_points=max_p)
+            db.add(db_question)
+        db.commit()
+        
         return ExamCoverResponse(exam_id=exam_id, layout_data=layout_data, pdf_base64=base64.b64encode(buffer.read()).decode("utf-8"))
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
