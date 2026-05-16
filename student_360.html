@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student 360 Panel</title>
+    <style>
+        :root { --primary: #3b82f6; --bg: #f1f5f9; --text: #0f172a; --card: #ffffff; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+        .header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { margin: 0; font-size: 1.5rem; color: var(--primary); }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 0.9rem; }
+        input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
+        button { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; }
+        button:hover { background: #2563eb; }
+        .student-list { list-style: none; padding: 0; margin: 0; }
+        .student-item { padding: 10px; border-bottom: 1px solid #e2e8f0; cursor: pointer; display: flex; justify-content: space-between; }
+        .student-item:hover { background: #f8fafc; }
+        .chart-container { margin-top: 20px; }
+        .progress-bar { background: #e2e8f0; border-radius: 99px; height: 12px; width: 100%; overflow: hidden; margin-top: 5px; }
+        .progress-fill { background: var(--primary); height: 100%; }
+        .topic-row { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>🎓 Student 360 Panel</h1>
+            <a href="/" style="text-decoration: none; color: #64748b; font-weight: 500;">← Back to Scanner</a>
+        </div>
+
+        <div class="card">
+            <h3>Add / Update Student</h3>
+            <form id="studentForm">
+                <div class="form-group">
+                    <label>Student Number</label>
+                    <input type="text" id="s_num" required>
+                </div>
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="s_name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="s_email">
+                </div>
+                <button type="submit">Save Student Profile</button>
+            </form>
+
+            <h3 style="margin-top: 30px;">Directory</h3>
+            <ul class="student-list" id="studentList">
+                <!-- Populated by JS -->
+            </ul>
+        </div>
+
+        <div class="card" id="profileView" style="display: none;">
+            <h2 id="p_name" style="margin-top: 0; color: var(--primary);">Student Name</h2>
+            <p style="color: #64748b; margin-top: -10px;"><span id="p_num"></span> | <span id="p_email"></span></p>
+
+            <h3>Exam History</h3>
+            <table style="width: 100%; text-align: left; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #e2e8f0;">
+                        <th style="padding: 8px 0;">Course</th>
+                        <th>Exam ID</th>
+                        <th>Total Score</th>
+                    </tr>
+                </thead>
+                <tbody id="p_history"></tbody>
+            </table>
+
+            <h3>Performance by Topic</h3>
+            <div id="p_topics" class="chart-container"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadStudents() {
+            const res = await fetch('/api/students');
+            const data = await res.json();
+            const list = document.getElementById('studentList');
+            list.innerHTML = data.map(s => `
+                <li class="student-item" onclick="viewProfile('${s.student_number}')">
+                    <span><strong>${s.name || 'Unknown'}</strong> (${s.student_number})</span>
+                    <span style="color: #64748b; font-size: 0.8rem;">${s.exam_count} Exams</span>
+                </li>
+            `).join('');
+        }
+
+        async function viewProfile(studentNum) {
+            const res = await fetch(`/api/students/${studentNum}`);
+            if(!res.ok) { alert("Student details not found."); return; }
+            const data = await res.json();
+            
+            document.getElementById('profileView').style.display = 'block';
+            document.getElementById('p_name').textContent = data.student.name || 'Unknown Student';
+            document.getElementById('p_num').textContent = data.student.number;
+            document.getElementById('p_email').textContent = data.student.email || 'No email provided';
+
+            document.getElementById('p_history').innerHTML = data.history.map(h => `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 8px 0;">${h.course}</td>
+                    <td style="font-family: monospace; font-size: 0.9em;">${h.exam_id}</td>
+                    <td style="font-weight: bold; color: var(--primary);">${h.score} pts</td>
+                </tr>
+            `).join('');
+
+            const topicsDiv = document.getElementById('p_topics');
+            topicsDiv.innerHTML = Object.entries(data.topic_performance).map(([topic, stats]) => {
+                const percent = stats.max > 0 ? Math.round((stats.earned / stats.max) * 100) : 0;
+                return `
+                    <div class="topic-row">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: 500;">
+                            <span>${topic}</span>
+                            <span>${stats.earned} / ${stats.max} (${percent}%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${percent}%;"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        document.getElementById('studentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                student_number: document.getElementById('s_num').value,
+                name: document.getElementById('s_name').value,
+                email: document.getElementById('s_email').value
+            };
+            await fetch('/api/students', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            e.target.reset();
+            loadStudents();
+        });
+
+        loadStudents();
+    </script>
+</body>
+</html>

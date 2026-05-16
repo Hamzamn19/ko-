@@ -121,6 +121,18 @@
             e.preventDefault();
             const btn = document.getElementById('genBtn');
             btn.disabled = true; btn.textContent = 'Generating...';
+            
+            const qCount = parseInt(document.getElementById('q_count').value);
+            const questionsData = [];
+            // In a real app, this would be a dynamic UI. For hackathon, we auto-assign subjects.
+            const sampleTopics = ["Mechanics", "Thermodynamics", "Optics", "Electromagnetism", "Quantum", "Relativity"];
+            for (let i = 0; i < qCount; i++) {
+                questionsData.push({
+                    topic: sampleTopics[i % sampleTopics.length],
+                    max_points: 10
+                });
+            }
+
             try {
                 const res = await fetch('/api/generate-cover', {
                     method: 'POST',
@@ -129,7 +141,8 @@
                         course_code: document.getElementById('course_code').value,
                         course_name: document.getElementById('course_name').value,
                         instructor_name: document.getElementById('instructor').value,
-                        question_count: parseInt(document.getElementById('q_count').value)
+                        question_count: qCount,
+                        questions_data: questionsData
                     })
                 });
                 const data = await res.json();
