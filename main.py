@@ -68,6 +68,7 @@ MARGIN = 30
 class QuestionInput(BaseModel):
     topic: str = "General"
     max_points: int = 10
+    string_tag: str = ""  # Kısa konu etiketi: "Kirchoff Rule", "Nested Loops"
 
 class ExamMetadata(BaseModel):
     course_code: str = Field(..., example="PHY6202")
@@ -138,43 +139,55 @@ async def create_student(student: StudentInput, db: Session = Depends(get_db)):
 
 @app.get("/api/students")
 async def list_students(db: Session = Depends(get_db)):
-    students = db.query(models.Student).all()
+    from sqlalchemy.orm import joinedload
+    students = db.query(models.Student).options(
+        joinedload(models.Student.papers).joinedload(models.ScannedPaper.scores)
+    ).all()
     res = []
     for s in students:
-        # Calculate overall avg
-        papers = db.query(models.ScannedPaper).filter(models.ScannedPaper.student_number == s.student_number).all()
-        total_score = sum([sum([score.points_awarded or 0 for score in p.scores]) for p in papers])
+        total_score = 0
+        for p in s.papers:
+            for score in p.scores:
+                total_score += score.points_awarded or 0
         res.append({
             "student_number": s.student_number,
             "name": s.name,
             "email": s.email,
-            "exam_count": len(papers),
+            "exam_count": len(s.papers),
             "total_score": total_score
         })
     return res
 
 @app.get("/api/students/{student_number}")
 async def get_student_details(student_number: str, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
     student = db.query(models.Student).filter(models.Student.student_number == student_number).first()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
     
-    papers = db.query(models.ScannedPaper).filter(models.ScannedPaper.student_number == student_number).all()
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.exam)
+    ).filter(models.ScannedPaper.student_number == student_number).all()
+    
+    # Batch-load all relevant questions in one query
+    exam_ids = list(set(p.exam_id for p in papers))
+    all_questions = {}
+    if exam_ids:
+        questions = db.query(models.Question).filter(models.Question.exam_id.in_(exam_ids)).all()
+        for q in questions:
+            all_questions[(q.exam_id, q.question_number)] = q
+    
     history = []
     topic_performance = {}
     
     for p in papers:
-        exam = db.query(models.Exam).filter(models.Exam.id == p.exam_id).first()
         total_points = 0
         for score in p.scores:
             pts = score.points_awarded or 0
             total_points += pts
             
-            # Find topic
-            q = db.query(models.Question).filter(
-                models.Question.exam_id == p.exam_id, 
-                models.Question.question_number == score.question_number
-            ).first()
+            q = all_questions.get((p.exam_id, score.question_number))
             if q and q.topic:
                 if q.topic not in topic_performance:
                     topic_performance[q.topic] = {"earned": 0, "max": 0}
@@ -183,8 +196,8 @@ async def get_student_details(student_number: str, db: Session = Depends(get_db)
                 
         history.append({
             "exam_id": p.exam_id,
-            "course": exam.course_code if exam else "Unknown",
-            "date": p.created_at,
+            "course": p.exam.course_code if p.exam else "Unknown",
+            "date": str(p.created_at) if p.created_at else None,
             "score": total_points
         })
         
@@ -431,10 +444,12 @@ async def generate_cover_endpoint(metadata: ExamMetadata, db: Session = Depends(
         for i in range(metadata.question_count):
             topic = "General"
             max_p = 10
+            string_tag = ""
             if i < len(metadata.questions_data):
                 topic = metadata.questions_data[i].topic
                 max_p = metadata.questions_data[i].max_points
-            db_question = models.Question(exam_id=exam_id, question_number=i+1, topic=topic, max_points=max_p)
+                string_tag = metadata.questions_data[i].string_tag
+            db_question = models.Question(exam_id=exam_id, question_number=i+1, topic=topic, max_points=max_p, string_tag=string_tag)
             db.add(db_question)
         db.commit()
         
@@ -578,6 +593,10 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     result_path = os.path.join(STATIC_DIR, result_filename)
     cv2.imwrite(result_path, annotated)
 
+    # Also encode as base64 for reliable frontend display
+    _, img_encoded = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    annotated_b64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
+
     db_paper = models.ScannedPaper(exam_id=exam_id, student_number=student_id, image_url=f"/static/{result_filename}", status=models.ProcessingStatus.COMPLETED)
     db.add(db_paper); db.commit(); db.refresh(db_paper)
     for res in results:
@@ -589,8 +608,181 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
         "paper_id": db_paper.id, 
         "student_id": student_id, 
         "scores": results,
-        "annotated_image_url": f"/static/{result_filename}"
+        "annotated_image_url": f"/static/{result_filename}",
+        "annotated_image_base64": annotated_b64
     }
+
+# --- SINAV API'LERİ ---
+
+@app.get("/api/exams/{exam_id}/results")
+async def get_exam_results(exam_id: str, db: Session = Depends(get_db)):
+    """Sınava giren tüm öğrencilerin detaylı sonuçları (LLM beslemesi için tasarlanmıştır)."""
+    from sqlalchemy.orm import joinedload
+    
+    db_exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not db_exam:
+        raise HTTPException(status_code=404, detail=f"Exam not found: {exam_id}")
+    
+    # Soruları çek
+    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).order_by(models.Question.question_number).all()
+    questions_list = [
+        {
+            "question_number": q.question_number,
+            "topic": q.topic,
+            "max_points": q.max_points,
+            "string_tag": q.string_tag or ""
+        }
+        for q in questions
+    ]
+    
+    # Question lookup for fast access
+    q_map = {q.question_number: q for q in questions}
+    total_max = sum(q.max_points for q in questions)
+    
+    # Tüm kağıtları ve skorları çek
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.student)
+    ).filter(models.ScannedPaper.exam_id == exam_id).all()
+    
+    students_list = []
+    all_totals = []
+    
+    for p in papers:
+        student_scores = []
+        student_total = 0
+        for score in sorted(p.scores, key=lambda s: s.question_number):
+            pts = score.points_awarded or 0
+            student_total += pts
+            q = q_map.get(score.question_number)
+            student_scores.append({
+                "question_number": score.question_number,
+                "points_awarded": pts,
+                "max_points": q.max_points if q else 10,
+                "string_tag": (q.string_tag or "") if q else "",
+                "topic": (q.topic or "") if q else ""
+            })
+        
+        all_totals.append(student_total)
+        students_list.append({
+            "student_number": p.student_number or "Unknown",
+            "name": p.student.name if p.student else None,
+            "total_score": student_total,
+            "total_max": total_max,
+            "percentage": round((student_total / total_max * 100), 1) if total_max > 0 else 0,
+            "scores": student_scores
+        })
+    
+    # Sınıf istatistikleri
+    class_stats = {}
+    if all_totals:
+        class_stats = {
+            "student_count": len(all_totals),
+            "average_score": round(sum(all_totals) / len(all_totals), 1),
+            "average_percentage": round(sum(all_totals) / len(all_totals) / total_max * 100, 1) if total_max > 0 else 0,
+            "max_score": max(all_totals),
+            "min_score": min(all_totals)
+        }
+    
+    return {
+        "exam_id": db_exam.id,
+        "course_code": db_exam.course_code,
+        "course_name": db_exam.course_name,
+        "instructor_name": db_exam.instructor_name,
+        "question_count": db_exam.question_count,
+        "questions": questions_list,
+        "students": students_list,
+        "class_stats": class_stats
+    }
+
+
+@app.get("/api/students/{student_number}/exam-results")
+async def get_student_exam_results(student_number: str, db: Session = Depends(get_db)):
+    """Öğrencinin girdiği tüm sınavların detaylı sonuçları (soru bazında puan + string_tag)."""
+    from sqlalchemy.orm import joinedload
+    
+    student = db.query(models.Student).filter(models.Student.student_number == student_number).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student not found: {student_number}")
+    
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.exam)
+    ).filter(models.ScannedPaper.student_number == student_number).all()
+    
+    # Batch-load tüm ilgili soruları
+    exam_ids = list(set(p.exam_id for p in papers))
+    q_map = {}
+    if exam_ids:
+        questions = db.query(models.Question).filter(models.Question.exam_id.in_(exam_ids)).all()
+        for q in questions:
+            q_map[(q.exam_id, q.question_number)] = q
+    
+    exams_list = []
+    all_percentages = []
+    string_tag_perf = {}  # string_tag → {earned, max, count}
+    
+    for p in papers:
+        exam_scores = []
+        paper_total = 0
+        paper_max = 0
+        
+        for score in sorted(p.scores, key=lambda s: s.question_number):
+            pts = score.points_awarded or 0
+            q = q_map.get((p.exam_id, score.question_number))
+            max_p = q.max_points if q else 10
+            tag = (q.string_tag or "") if q else ""
+            topic = (q.topic or "") if q else ""
+            
+            paper_total += pts
+            paper_max += max_p
+            
+            exam_scores.append({
+                "question_number": score.question_number,
+                "points_awarded": pts,
+                "max_points": max_p,
+                "string_tag": tag,
+                "topic": topic
+            })
+            
+            # String tag performans takibi
+            if tag:
+                if tag not in string_tag_perf:
+                    string_tag_perf[tag] = {"total_earned": 0, "total_max": 0, "appearances": 0}
+                string_tag_perf[tag]["total_earned"] += pts
+                string_tag_perf[tag]["total_max"] += max_p
+                string_tag_perf[tag]["appearances"] += 1
+        
+        pct = round((paper_total / paper_max * 100), 1) if paper_max > 0 else 0
+        all_percentages.append(pct)
+        
+        exams_list.append({
+            "exam_id": p.exam_id,
+            "course_code": p.exam.course_code if p.exam else "Unknown",
+            "course_name": p.exam.course_name if p.exam else "Unknown",
+            "date": str(p.created_at) if p.created_at else None,
+            "total_score": paper_total,
+            "total_max": paper_max,
+            "percentage": pct,
+            "scores": exam_scores
+        })
+    
+    # String tag performanslarına yüzde ekle
+    for tag, perf in string_tag_perf.items():
+        perf["percentage"] = round((perf["total_earned"] / perf["total_max"] * 100), 1) if perf["total_max"] > 0 else 0
+    
+    return {
+        "student": {
+            "student_number": student.student_number,
+            "name": student.name,
+            "email": student.email
+        },
+        "total_exams": len(exams_list),
+        "overall_average_percentage": round(sum(all_percentages) / len(all_percentages), 1) if all_percentages else 0,
+        "exams": exams_list,
+        "string_tag_performance": string_tag_perf
+    }
+
 
 @app.post("/predict")
 async def predict_handwriting(file: UploadFile = File(...), max_points: int = 100):

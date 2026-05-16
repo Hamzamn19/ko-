@@ -183,8 +183,10 @@
     <script>
         const dirView = document.getElementById('directoryView');
         const detView = document.getElementById('detailView');
+        let detailAbort = null;
 
         function showDirectory() {
+            if (detailAbort) { detailAbort.abort(); detailAbort = null; }
             detView.classList.add('hide');
             dirView.classList.remove('hide');
         }
@@ -197,64 +199,115 @@
         window.showDirectory = showDirectory;
 
         async function loadStudents() {
-            const res = await fetch('/api/students');
-            const data = await res.json();
-            document.getElementById('studentList').innerHTML = data.map((s) => `
-                <button type="button" class="student-card glass-soft text-left" onclick="viewProfile('${s.student_number}')">
-                    <div class="flex items-center justify-between">
-                        <span class="w-10 h-10 rounded-xl grid place-items-center font-bold" style="background: rgba(107,108,255,0.16);">
-                            ${(s.name || 'S').substring(0, 2).toUpperCase()}
-                        </span>
-                        <span class="pill">${s.exam_count || 0} exams</span>
-                    </div>
-                    <div>
-                        <p class="font-bold text-base">${s.name || 'Unknown'}</p>
-                        <p class="font-mono text-xs" style="color: var(--text-secondary);">${s.student_number}</p>
-                    </div>
-                    <div>
-                        <p class="field-label">Total Score</p>
-                        <p class="kpi-value text-[1.5rem] leading-none">${s.total_score}</p>
-                    </div>
-                </button>
-            `).join('');
+            const list = document.getElementById('studentList');
+            list.innerHTML = '<p class="text-sm" style="color:var(--text-secondary);">Loading students…</p>';
+
+            try {
+                const res = await fetch('/api/students');
+                if (!res.ok) throw new Error('Failed to load students');
+                const data = await res.json();
+
+                if (!data.length) {
+                    list.innerHTML = '<p class="text-sm" style="color:var(--text-secondary);">No students registered yet.</p>';
+                    return;
+                }
+
+                list.innerHTML = data.map((s) => `
+                    <button type="button" class="student-card glass-soft text-left" onclick="viewProfile('${s.student_number}')">
+                        <div class="flex items-center justify-between">
+                            <span class="w-10 h-10 rounded-xl grid place-items-center font-bold" style="background: rgba(107,108,255,0.16);">
+                                ${(s.name || 'S').substring(0, 2).toUpperCase()}
+                            </span>
+                            <span class="pill">${s.exam_count || 0} exams</span>
+                        </div>
+                        <div>
+                            <p class="font-bold text-base">${s.name || 'Unknown'}</p>
+                            <p class="font-mono text-xs" style="color: var(--text-secondary);">${s.student_number}</p>
+                        </div>
+                        <div>
+                            <p class="field-label">Total Score</p>
+                            <p class="kpi-value text-[1.5rem] leading-none">${s.total_score}</p>
+                        </div>
+                    </button>
+                `).join('');
+            } catch (err) {
+                console.error('[Students] Load error:', err);
+                list.innerHTML = `
+                    <div class="text-center py-4">
+                        <p class="text-sm font-semibold" style="color:var(--text-secondary);">Failed to load students</p>
+                        <button type="button" class="ghost-btn mt-2" onclick="loadStudents()">
+                            <span class="material-symbols-outlined">refresh</span> Retry
+                        </button>
+                    </div>`;
+            }
         }
 
         async function viewProfile(studentNum) {
-            const res = await fetch(`/api/students/${studentNum}`);
-            const data = await res.json();
-            const s = data.student;
+            // Cancel any previous in-flight request
+            if (detailAbort) detailAbort.abort();
+            detailAbort = new AbortController();
 
-            document.getElementById('p_name').textContent = s.name || 'Anonymous';
-            document.getElementById('p_num').textContent = s.number;
-            document.getElementById('p_email').textContent = s.email || 'No Email';
-            document.getElementById('p_initials').textContent = (s.name || 'S').substring(0, 2).toUpperCase();
-
-            document.getElementById('p_history').innerHTML = data.history.map((h) => `
-                <tr>
-                    <td class="font-mono text-xs">${new Date(h.date).toLocaleDateString()}</td>
-                    <td class="font-mono text-xs">${h.exam_id.substring(0, 12)}...</td>
-                    <td>${h.course}</td>
-                    <td class="font-mono font-bold">${h.score}</td>
-                </tr>
-            `).join('');
-
-            document.getElementById('p_topics').innerHTML = Object.entries(data.topic_performance).map(([topic, stats]) => {
-                const percent = stats.max > 0 ? Math.round((stats.earned / stats.max) * 100) : 0;
-                return `
-                    <div class="card glass-soft">
-                        <div class="flex justify-between mb-2">
-                            <p class="font-semibold text-sm">${topic}</p>
-                            <p class="font-mono text-xs">${percent}%</p>
-                        </div>
-                        <div class="progress-track">
-                            <div class="progress-fill" style="width: ${percent}%;"></div>
-                        </div>
-                        <p class="text-xs mt-2" style="color: var(--text-secondary);">${stats.earned}/${stats.max} points</p>
-                    </div>
-                `;
-            }).join('') || '<div class="text-sm" style="color: var(--text-secondary);">No Data</div>';
-
+            // Show detail view immediately with loading state
+            document.getElementById('p_name').textContent = 'Loading…';
+            document.getElementById('p_num').textContent = studentNum;
+            document.getElementById('p_email').textContent = '';
+            document.getElementById('p_initials').textContent = '…';
+            document.getElementById('p_history').innerHTML = '<tr><td colspan="4" class="text-center text-sm" style="color:var(--text-secondary);">Loading…</td></tr>';
+            document.getElementById('p_topics').innerHTML = '<p class="text-sm" style="color:var(--text-secondary);">Loading…</p>';
             showDetail();
+
+            try {
+                const res = await fetch(`/api/students/${encodeURIComponent(studentNum)}`, {
+                    signal: detailAbort.signal
+                });
+                if (!res.ok) throw new Error(`API returned ${res.status}`);
+                const data = await res.json();
+                const s = data.student;
+
+                document.getElementById('p_name').textContent = s.name || 'Anonymous';
+                document.getElementById('p_num').textContent = s.number;
+                document.getElementById('p_email').textContent = s.email || 'No Email';
+                document.getElementById('p_initials').textContent = (s.name || 'S').substring(0, 2).toUpperCase();
+
+                document.getElementById('p_history').innerHTML = data.history.length
+                    ? data.history.map((h) => `
+                        <tr>
+                            <td class="font-mono text-xs">${h.date ? new Date(h.date).toLocaleDateString() : '-'}</td>
+                            <td class="font-mono text-xs">${(h.exam_id || '').substring(0, 16)}…</td>
+                            <td>${h.course}</td>
+                            <td class="font-mono font-bold">${h.score}</td>
+                        </tr>
+                    `).join('')
+                    : '<tr><td colspan="4" class="text-center text-sm" style="color:var(--text-secondary);">No exam history</td></tr>';
+
+                document.getElementById('p_topics').innerHTML = Object.entries(data.topic_performance).map(([topic, stats]) => {
+                    const percent = stats.max > 0 ? Math.round((stats.earned / stats.max) * 100) : 0;
+                    return `
+                        <div class="card glass-soft">
+                            <div class="flex justify-between mb-2">
+                                <p class="font-semibold text-sm">${topic}</p>
+                                <p class="font-mono text-xs">${percent}%</p>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill" style="width: ${percent}%;"></div>
+                            </div>
+                            <p class="text-xs mt-2" style="color: var(--text-secondary);">${stats.earned}/${stats.max} points</p>
+                        </div>
+                    `;
+                }).join('') || '<div class="text-sm" style="color: var(--text-secondary);">No Data</div>';
+
+            } catch (err) {
+                if (err.name === 'AbortError') return; // User navigated away
+                console.error('[Students] Detail error:', err);
+                document.getElementById('p_name').textContent = 'Error loading profile';
+                document.getElementById('p_topics').innerHTML = `
+                    <div class="text-center py-4">
+                        <p class="text-sm" style="color:var(--text-secondary);">${err.message}</p>
+                        <button type="button" class="ghost-btn mt-2" onclick="viewProfile('${studentNum}')">
+                            <span class="material-symbols-outlined">refresh</span> Retry
+                        </button>
+                    </div>`;
+            }
         }
 
         window.viewProfile = viewProfile;

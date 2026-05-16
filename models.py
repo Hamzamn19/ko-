@@ -42,6 +42,7 @@ class Question(Base):
     question_number = Column(Integer)
     topic = Column(String, nullable=True)
     max_points = Column(Integer, default=10)
+    string_tag = Column(String, nullable=True)  # Kısa konu etiketi: "Kirchoff Rule", "Nested Loops" vb.
 
     exam = relationship("Exam", back_populates="questions")
 

@@ -164,12 +164,35 @@
 
             try {
                 const res = await fetch('/api/scan-paper', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error('Scan failed');
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error('Scan failed: ' + errText);
+                }
                 const data = await res.json();
+                console.log('[Scanner] API response:', data);
 
                 document.getElementById('resExamId').textContent = data.exam_id;
                 document.getElementById('resStudentId').textContent = data.student_id;
-                document.getElementById('resAnnotatedImg').src = `${data.annotated_image_url}?t=${Date.now()}`;
+
+                const imgEl = document.getElementById('resAnnotatedImg');
+
+                // Try annotated_image_url first, fallback to base64 if provided
+                if (data.annotated_image_base64) {
+                    imgEl.src = 'data:image/jpeg;base64,' + data.annotated_image_base64;
+                } else if (data.annotated_image_url) {
+                    imgEl.src = data.annotated_image_url + '?t=' + Date.now();
+                }
+
+                imgEl.onerror = function() {
+                    console.error('[Scanner] Image failed to load:', imgEl.src);
+                    this.alt = 'Image failed to load. Check /static/ mount.';
+                    this.style.minHeight = '80px';
+                    this.style.background = 'rgba(239,68,68,0.08)';
+                    this.style.display = 'flex';
+                    this.style.alignItems = 'center';
+                    this.style.justifyContent = 'center';
+                };
+
                 document.getElementById('resScoreGrid').innerHTML = data.scores.map((s) => `
                     <div class="score-box glass-soft">
                         <p class="text-[10px] font-bold" style="color: var(--text-secondary);">Q${s.question}</p>
@@ -178,7 +201,8 @@
                 `).join('');
                 document.getElementById('scanResult').classList.remove('hide');
             } catch (err) {
-                alert('Failed');
+                console.error('[Scanner] Error:', err);
+                alert('Scan failed: ' + err.message);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Initialize AI';
