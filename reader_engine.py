@@ -207,9 +207,29 @@ class ReaderEngine:
         # 1. Upscale 3x for precision
         upscaled = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         
-        # 2. Local Centering: Find the darkest mass nearby
-        blurred = cv2.GaussianBlur(upscaled, (5, 5), 0)
-        _, _, min_loc, _ = cv2.minMaxLoc(blurred)
+        # 2. Stable Centering: Find the center of mass (Centroid) of the dark area
+        # Use the adaptive binary mask to find where the actual ink is
+        binary_for_centroid = cv2.adaptiveThreshold(
+            upscaled, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY_INV, 21, 8
+        )
+        
+        M = cv2.moments(binary_for_centroid)
+        if M["m00"] > 0:
+            # Centroid in upscaled coordinates
+            centroid_x_upscaled = M["m10"] / M["m00"]
+            centroid_y_upscaled = M["m01"] / M["m00"]
+            
+            # Offset from the expected center of the upscaled image
+            center_upscaled = (upscaled.shape[1] / 2.0, upscaled.shape[0] / 2.0)
+            offset_x = (centroid_x_upscaled - center_upscaled[0]) / 3.0
+            offset_y = (centroid_y_upscaled - center_upscaled[1]) / 3.0
+            
+            # Final adjusted global coordinates
+            adj_x = x + offset_x
+            adj_y = y + offset_y
+        else:
+            adj_x, adj_y = x, y
         
         # 3. Calculate Luma Ratio (Darkness)
         avg_luma = np.mean(upscaled)
@@ -236,7 +256,8 @@ class ReaderEngine:
         return {
             "score": float(final_score),
             "pixel_ratio": float(pixel_ratio),
-            "luma_ratio": float(luma_ratio)
+            "luma_ratio": float(luma_ratio),
+            "adj_center": (float(adj_x), float(adj_y))
         }
 
     def crop_roi_safely(self, image: np.ndarray, x: int, y: int, w: int, h: int, margin_pct: float = 0.15) -> np.ndarray:

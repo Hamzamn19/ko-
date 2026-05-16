@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./hackathon.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./db/hackathon.db"
 
 # connect_args={"check_same_thread": False} is needed only for SQLite
 engine = create_engine(

@@ -303,30 +303,54 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     luma_refs = {"white": np.percentile(gray, 95), "black": np.percentile(gray, 5), "grey": np.mean(gray)}
     
     student_id, cols, rows = "", 10, 10
-    # OMR section starts 35 PDF points below the top of the SID box
-    # We must scale this 35 points using the mapped height ratio
-    scale_ratio = sid_box["height"] / sid_pdf_box[3] if sid_pdf_box[3] > 0 else 1.0
-    header_offset = int(35 * scale_ratio)
+    # --- PIXEL PERFECT OMR GEOMETRY ---
+    scale_ratio = sid_box["width"] / sid_pdf_box[2] if sid_pdf_box[2] > 0 else 1.0
+    pdf_left_offset = (sid_pdf_box[2] - 147) / 2 # Center the 147pt grid inside the box
     
-    gx, gy, gw, gh = sid_box["x"], sid_box["y"] + header_offset, sid_box["width"], sid_box["height"] - header_offset
-    cw, rh = gw / cols, gh / rows
     for c in range(cols):
         col_scores = []
+        # Calculate center X for this column in PDF points first, then scale
+        # col_start = left_offset + c * (box_w + gap) + (box_w - bubble_size)/2
+        # center_x = col_start + bubble_size/2 = left_offset + c*15 + 6
+        pdf_cx = pdf_left_offset + (c * 15) + 6
+        cx_pixels = int(sid_box["x"] + (pdf_cx * scale_ratio))
+        
         for r in range(rows):
-            bubble_res = reader.scan_omr_circle(gray, int(gx + (c + 0.5) * cw), int(gy + (r + 0.5) * rh), int(min(cw, rh) * 0.4), luma_refs)
-            col_scores.append((r, bubble_res["score"]))
+            # Calculate center Y for this row in PDF points (top offset is 34)
+            # row_center = top_offset + (r+1)*13.5 - 4.5
+            pdf_cy = 34 + ((r + 1) * 13.5) - 4.5
+            cy_pixels = int(sid_box["y"] + (pdf_cy * scale_ratio))
+            
+            scan_radius = int(4.5 * scale_ratio) # 45% of 10pt approx
+            
+            bubble_res = reader.scan_omr_circle(gray, cx_pixels, cy_pixels, scan_radius, luma_refs)
+            col_scores.append({
+                "digit": r, 
+                "score": bubble_res["score"], 
+                "center": bubble_res["adj_center"],
+                "radius": scan_radius
+            })
+            
+            # Visual Debug: Tiny Red dot for EXACT grid center
+            cv2.circle(annotated, (cx_pixels, cy_pixels), 1, (0, 0, 255), -1)
         
         # Decision Logic (The Secret Sauce)
-        col_scores.sort(key=lambda x: x[1], reverse=True)
-        top1_digit, top1_score = col_scores[0]
-        top2_digit, top2_score = col_scores[1]
+        col_scores.sort(key=lambda x: x["score"], reverse=True)
+        top1 = col_scores[0]
+        top2 = col_scores[1]
         
         picked_digit = "?"
-        if top1_score > 0.30: # Base Threshold
-            picked_digit = str(top1_digit)
-        elif 0.22 <= top1_score <= 0.30: # Light Threshold
-            if (top1_score - top2_score) > 0.12: # Significant Gap
-                picked_digit = str(top1_digit)
+        if top1["score"] > 0.30: # Base Threshold
+            picked_digit = str(top1["digit"])
+            # --- Visual Debug: Green circle for PICKED digit ---
+            adj_cx, adj_cy = int(top1["center"][0]), int(top1["center"][1])
+            cv2.circle(annotated, (adj_cx, adj_cy), top1["radius"], (0, 255, 0), 2)
+        elif 0.22 <= top1["score"] <= 0.30: # Light Threshold
+            if (top1["score"] - top2["score"]) > 0.12: # Significant Gap
+                picked_digit = str(top1["digit"])
+                # --- Visual Debug: Green circle for PICKED digit ---
+                adj_cx, adj_cy = int(top1["center"][0]), int(top1["center"][1])
+                cv2.circle(annotated, (adj_cx, adj_cy), top1["radius"], (0, 255, 0), 2)
         
         student_id += picked_digit
 
