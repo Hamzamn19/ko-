@@ -101,7 +101,7 @@
 
             <main class="main-content">
                 <section class="panel-grid">
-                    <article class="card glass-soft panel-span-8">
+                    <article class="card glass-soft panel-span-12">
                         <h2 class="card-title">Full Paper Scanner</h2>
                         <p class="card-subtitle">Reads exam ID, student ID, and per-question values from uploaded scans.</p>
 
@@ -137,27 +137,6 @@
                                 </div>
                             </div>
                         </section>
-                    </article>
-
-                    <article class="card glass-soft panel-span-4">
-                        <h2 class="card-title">Single Box Predictor</h2>
-                        <p class="card-subtitle">Predict one isolated score field.</p>
-
-                        <form id="predictForm" class="mt-4 space-y-4">
-                            <label class="field">
-                                <span class="field-label">Snippet Upload</span>
-                                <input id="predict_file" class="glass-input" type="file" accept=".pdf,image/*" required />
-                            </label>
-                            <button id="predictBtn" type="submit" class="ghost-btn w-full h-[44px] justify-center">
-                                <span class="material-symbols-outlined">analytics</span>
-                                Predict
-                            </button>
-                        </form>
-
-                        <div id="predictResult" class="card glass-soft mt-4 hide text-center">
-                            <p class="field-label mb-2">Predicted Value</p>
-                            <p id="predictVal" class="kpi-value"></p>
-                        </div>
                     </article>
                 </section>
             </main>
@@ -206,28 +185,6 @@
             }
         });
 
-        document.getElementById('predictForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('predictBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> Predicting';
-
-            const formData = new FormData();
-            formData.append('file', document.getElementById('predict_file').files[0]);
-
-            try {
-                const res = await fetch('/predict', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error('Predict failed');
-                const data = await res.json();
-                document.getElementById('predictVal').textContent = data.score;
-                document.getElementById('predictResult').classList.remove('hide');
-            } catch (err) {
-                alert('Failed');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-symbols-outlined">analytics</span> Predict';
-            }
-        });
     </script>
 </body>
 </html>

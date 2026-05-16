@@ -105,7 +105,7 @@
 
             <main class="main-content">
                 <section class="panel-grid">
-                    <article class="card glass-soft panel-span-6">
+                    <article class="card glass-soft panel-span-12">
                         <h2 class="card-title">Compose New Cover</h2>
                         <p class="card-subtitle">Generate print-ready templates with QR layout registration.</p>
 
@@ -143,36 +143,6 @@
                             </div>
                         </form>
                     </article>
-
-                    <article class="card glass-soft panel-span-6">
-                        <h2 class="card-title">Live Paper Snapshot</h2>
-                        <p class="card-subtitle">Visual approximation of generated structure.</p>
-
-                        <div class="preview-paper mt-4">
-                            <div class="flex items-center justify-between border-b border-slate-300 pb-3">
-                                <h3 class="text-sm font-black tracking-wide">GLASS UNIVERSITY</h3>
-                                <span class="material-symbols-outlined">school</span>
-                            </div>
-                            <div class="mt-4 space-y-3 text-[12px] font-semibold">
-                                <div class="rounded-lg border border-slate-300 p-2">
-                                    <p class="text-[10px] uppercase tracking-wider text-slate-500">Course</p>
-                                    <p id="previewCourse">CSCI-404</p>
-                                </div>
-                                <div class="rounded-lg border border-slate-300 p-2">
-                                    <p class="text-[10px] uppercase tracking-wider text-slate-500">Title</p>
-                                    <p id="previewName">Advanced Algorithms Final</p>
-                                </div>
-                                <div class="rounded-lg border border-slate-300 p-2">
-                                    <p class="text-[10px] uppercase tracking-wider text-slate-500">Questions</p>
-                                    <p id="previewCount">6 items</p>
-                                </div>
-                                <div class="rounded-lg border border-slate-300 p-2 flex items-center justify-between">
-                                    <span class="text-[10px] uppercase tracking-wider text-slate-500">Identity Block</span>
-                                    <span class="material-symbols-outlined text-[18px]">qr_code_2</span>
-                                </div>
-                            </div>
-                        </div>
-                    </article>
                 </section>
             </main>
         </section>
@@ -185,15 +155,6 @@
         const courseCode = document.getElementById('course_code');
         const courseName = document.getElementById('course_name');
         const qCountInput = document.getElementById('q_count');
-
-        function syncPreview() {
-            document.getElementById('previewCourse').textContent = courseCode.value || '-';
-            document.getElementById('previewName').textContent = courseName.value || '-';
-            document.getElementById('previewCount').textContent = `${qCountInput.value || 0} items`;
-        }
-
-        [courseCode, courseName, qCountInput].forEach((el) => el.addEventListener('input', syncPreview));
-        syncPreview();
 
         document.getElementById('genForm').addEventListener('submit', async (e) => {
             e.preventDefault();
