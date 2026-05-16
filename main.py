@@ -167,8 +167,8 @@ def draw_student_id_section(c, x, y, width, height):
         for j in range(10):
             cur_y = omr_start_y - (j + 1) * row_spacing
             c.setLineWidth(0.5); c.rect(cur_x, cur_y, omr_box_size, omr_box_size, stroke=1, fill=0)
-            c.setFillColor(colors.lightgrey); c.setFont("Helvetica", 6); c.drawCentredString(cur_x + omr_box_size/2, cur_y + 2, str(j))
-            c.setFillColor(colors.black)
+            # Placeholder numbers removed to prevent false positives in OMR detection
+            # c.setFillColor(colors.lightgrey); c.setFont("Helvetica", 6); c.drawCentredString(cur_x + omr_box_size/2, cur_y + 2, str(j))
     c.restoreState()
 
 def draw_tabular_header_with_qr(c, start_x, start_y, width, info_dict, qr_img_buffer):
@@ -311,11 +311,24 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     gx, gy, gw, gh = sid_box["x"], sid_box["y"] + header_offset, sid_box["width"], sid_box["height"] - header_offset
     cw, rh = gw / cols, gh / rows
     for c in range(cols):
-        digit = None
+        col_scores = []
         for r in range(rows):
-            if reader.scan_omr_circle(gray, int(gx + (c + 0.5) * cw), int(gy + (r + 0.5) * rh), int(min(cw, rh) * 0.4), luma_refs):
-                digit = str(r); break
-        student_id += digit if digit else "?"
+            bubble_res = reader.scan_omr_circle(gray, int(gx + (c + 0.5) * cw), int(gy + (r + 0.5) * rh), int(min(cw, rh) * 0.4), luma_refs)
+            col_scores.append((r, bubble_res["score"]))
+        
+        # Decision Logic (The Secret Sauce)
+        col_scores.sort(key=lambda x: x[1], reverse=True)
+        top1_digit, top1_score = col_scores[0]
+        top2_digit, top2_score = col_scores[1]
+        
+        picked_digit = "?"
+        if top1_score > 0.30: # Base Threshold
+            picked_digit = str(top1_digit)
+        elif 0.22 <= top1_score <= 0.30: # Light Threshold
+            if (top1_score - top2_score) > 0.12: # Significant Gap
+                picked_digit = str(top1_digit)
+        
+        student_id += picked_digit
 
     cv2.putText(annotated, f"ID: {student_id}", (sid_box["x"], sid_box["y"] - 10), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
