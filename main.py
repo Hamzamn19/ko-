@@ -18,7 +18,10 @@ import cv2
 
 # --- READER ENGINE ---
 from reader_engine import ReaderEngine
+from handwriting_ocr import get_handwriting_score_recognizer
+
 reader = ReaderEngine(model_path="mnist_gtx_model.h5")
+recognizer = get_handwriting_score_recognizer()
 
 # --- DATABASE INTEGRATION ---
 
@@ -75,6 +78,33 @@ async def list_exams(db: Session = Depends(get_db)):
 async def list_papers(db: Session = Depends(get_db)):
     papers = db.query(models.ScannedPaper).order_by(models.ScannedPaper.created_at.desc()).all()
     return papers
+
+# --- TEAMMATE'S INFERENCE ENDPOINTS ---
+
+@app.post("/predict")
+async def predict_handwriting(
+    file: UploadFile = File(...),
+    max_points: int = 100
+):
+    """
+    Teammate's endpoint: Processes a single handwriting ROI image and returns the recognized score.
+    """
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    roi = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if roi is None:
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
+    result = recognizer.recognize_score(roi, max_points=max_points)
+    return result
+
+@app.get("/api/predict/status")
+async def predict_status():
+    """
+    Teammate's endpoint: Returns the status and engine type of the handwriting recognizer.
+    """
+    return {"status": "running", "engine": recognizer.engine}
 
 def convert_to_top_left(x: float, y_bottom_left: float, width: float, height: float) -> Dict[str, float]:
     """
