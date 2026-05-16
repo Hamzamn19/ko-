@@ -3,18 +3,14 @@ import numpy as np
 import os
 from typing import List, Tuple, Dict, Any, Optional
 
+from handwriting_ocr import get_handwriting_score_recognizer
+
 class ReaderEngine:
     def __init__(self, model_path: str = "mnist_gtx_model.onnx"):
         self.model_path = model_path
-        self.session = None
         self.qr_detector = cv2.QRCodeDetector()
+        self.hw_recognizer = get_handwriting_score_recognizer()
         
-    def load_model(self):
-        if self.session is None and os.path.exists(self.model_path):
-            import onnxruntime as ort
-            self.session = ort.InferenceSession(self.model_path)
-        return self.session
-
     def align_image(self, image: np.ndarray) -> np.ndarray:
         """
         Attempts to align the paper using contour detection.
@@ -47,143 +43,37 @@ class ReaderEngine:
         data, points, _ = self.qr_detector.detectAndDecode(gray)
         return data, points
 
-    def preprocess_mnist_style(self, roi: np.ndarray) -> np.ndarray:
+    def predict_score(self, roi: np.ndarray, max_points: int = 100) -> int:
         """
-        DRAMATICALLY IMPROVED MNIST PREPROCESSING:
-        Uses Adaptive Thresholding and Precise Mass Centering.
+        OFFICIAL NOVAVISION REDIRECT:
+        Sends the ROI to the external Inference Server.
         """
-        if len(roi.shape) == 3:
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = roi
-
-        # 1. Use Adaptive Thresholding to handle shadows
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-        )
-
-        # 2. Cleanup noise
-        kernel = np.ones((2, 2), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-
-        # 3. Find bounding box of the digit
-        coords = cv2.findNonZero(binary)
-        if coords is None:
-            return np.zeros((1, 28, 28, 1), dtype=np.float32)
-            
-        x, y, w, h = cv2.boundingRect(coords)
-        digit_roi = binary[y:y+h, x:x+w]
-
-        # 4. Resize maintaining aspect ratio
-        if w > h:
-            new_w = 20
-            new_h = int(h * (20 / w))
-        else:
-            new_h = 20
-            new_w = int(w * (20 / h))
+        import requests
         
-        new_w, new_h = max(1, new_w), max(1, new_h)
-        resized_digit = cv2.resize(digit_roi, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        # 5. Place in 28x28 canvas
-        canvas = np.zeros((28, 28), dtype=np.uint8)
-        start_x = (28 - new_w) // 2
-        start_y = (28 - new_h) // 2
-        canvas[start_y:start_y+new_h, start_x:start_x+new_w] = resized_digit
-
-        # 6. Mass Centering (Centering by weight)
-        M = cv2.moments(canvas)
-        if M["m00"] != 0:
-            cx, cy = M["m10"] / M["m00"], M["m01"] / M["m00"]
-            shift_x, shift_y = 14 - cx, 14 - cy
-            trans_mat = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
-            canvas = cv2.warpAffine(canvas, trans_mat, (28, 28))
-
-        return canvas.astype(np.float32).reshape(1, 28, 28, 1) / 255.0
-
-    def predict_digit(self, roi: np.ndarray) -> int:
-        session = self.load_model()
-        if session is None: return -1
-            
-        input_data = self.preprocess_mnist_style(roi)
-        input_name = session.get_inputs()[0].name
-        prediction = session.run(None, {input_name: input_data})[0]
+        # URL of your NovaVision server (assuming it's on the host machine or another container)
+        # We'll try to reach it at host.docker.internal if in Docker, otherwise localhost
+        url = os.getenv("NOVAVISION_URL", "http://host.docker.internal:8000/predict")
         
-        # If the highest probability is very low, return 0 (no digit)
-        if np.max(prediction) < 0.3:
-            return 0
+        try:
+            # Convert ROI to PNG buffer
+            _, img_encoded = cv2.imencode(".png", roi)
+            files = {"file": ("snippet.png", img_encoded.tobytes(), "image/png")}
+            params = {"max_points": max_points}
             
-        return int(np.argmax(prediction))
-
-    def predict_score(self, roi: np.ndarray) -> int:
-        """Segments ROI into individual digits and predicts the final combined score."""
-        if len(roi.shape) == 3:
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = roi
+            print(f"[Reader] Forwarding snippet to NovaVision: {url}")
+            response = requests.post(url, files=files, params=params, timeout=5)
             
-        # 1. Binarize for contour detection
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-        )
-        kernel = np.ones((2, 2), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-
-        # 2. Find contours
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Filter and sort contours left-to-right
-        h, w = binary.shape
-        min_area = 15
-        min_h = max(6, int(h * 0.20))
-        
-        boxes = []
-        for cnt in contours:
-            x, y, cw, ch = cv2.boundingRect(cnt)
-            if cw * ch >= min_area and ch >= min_h and cw >= 2:
-                boxes.append((x, y, cw, ch))
-                
-        boxes.sort(key=lambda b: b[0]) # sort by x-coordinate (left to right)
-        
-        if not boxes:
-            return 0
-            
-        # Merge overlapping/very close boxes
-        merged = []
-        for box in boxes:
-            if not merged:
-                merged.append(box)
-                continue
-            px, py, pw, ph = merged[-1]
-            x, y, cw, ch = box
-            # If horizontal distance is very small (e.g. 3 pixels), merge them (handles disconnected parts)
-            if x <= (px + pw + 3):
-                nx1 = min(px, x)
-                ny1 = min(py, y)
-                nx2 = max(px + pw, x + cw)
-                ny2 = max(py + ph, y + ch)
-                merged[-1] = (nx1, ny1, nx2 - nx1, ny2 - ny1)
+            if response.status_code == 200:
+                result = response.json()
+                return int(result.get("score", 0))
             else:
-                merged.append(box)
-
-        # We assume max 3 digits for a score (e.g. 100)
-        if len(merged) > 3:
-            merged = merged[:3]
-            
-        final_score_str = ""
-        for x, y, cw, ch in merged:
-            pad = 2
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(w, x + cw + pad)
-            y2 = min(h, y + ch + pad)
-            
-            digit_crop = gray[y1:y2, x1:x2]
-            digit_val = self.predict_digit(digit_crop)
-            final_score_str += str(digit_val)
-            
-        return int(final_score_str) if final_score_str else 0
+                print(f"[Reader] NovaVision Error: {response.status_code}")
+                return 0
+        except Exception as e:
+            print(f"[Reader] Connection to NovaVision failed: {e}")
+            # Fallback to local if server is down (optional, but good for stability)
+            result = self.hw_recognizer.recognize_score(roi, max_points=max_points)
+            return int(result.get("score", 0))
 
     def scan_omr_circle(self, gray_image: np.ndarray, x: int, y: int, radius: int, luma_refs: Dict[str, float]) -> Dict[str, float]:
         """

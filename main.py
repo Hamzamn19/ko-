@@ -175,8 +175,22 @@ def draw_tabular_header_with_qr(c, start_x, start_y, width, info_dict, qr_img_bu
     full_w = width - (2 * MARGIN)
     LEFT_WIDTH, RIGHT_WIDTH = full_w * 0.60, full_w * 0.40
     header_height = 180
-    c.rect(start_x, start_y - 75, LEFT_WIDTH * 0.50, 75)
-    c.setFont("Helvetica-Bold", 10); c.drawCentredString(start_x + (LEFT_WIDTH * 0.25), start_y - 40, "UNIVERSITY LOGO")
+    # Logo drawing section
+    logo_path = "Gemini_Generated_Image_4xrcth4xrcth4xrc.png"
+    logo_box_w = LEFT_WIDTH * 0.50
+    logo_box_h = 75
+    c.rect(start_x, start_y - logo_box_h, logo_box_w, logo_box_h)
+    
+    from reportlab.lib.utils import ImageReader
+    if os.path.exists(logo_path):
+        # Draw the logo image, centered and scaled to fit the box
+        # We use preserveAspectRatio and anchor='c' for professional fitting
+        c.drawImage(logo_path, start_x + 5, start_y - logo_box_h + 5, 
+                    width=logo_box_w - 10, height=logo_box_h - 10, 
+                    preserveAspectRatio=True, mask='auto', anchor='c')
+    else:
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(start_x + (logo_box_w / 2), start_y - 40, "LOGO NOT FOUND")
     qr_size = 70; qr_x = start_x + (LEFT_WIDTH * 0.50) + (LEFT_WIDTH * 0.50 - qr_size) / 2
     qr_y = start_y - 75 + (75 - qr_size) / 2
     c.rect(start_x + (LEFT_WIDTH * 0.50), start_y - 75, LEFT_WIDTH * 0.50, 75)
@@ -363,7 +377,8 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     for i, qbox in enumerate(qr_layout["q"]):
         coords = get_mapped_box(qbox)
         roi = reader.crop_roi_safely(image, coords["x"], coords["y"], coords["width"], coords["height"], margin_pct=0.15)
-        score = reader.predict_score(roi)
+        # Using the advanced handwriting engine with a default max_points of 10
+        score = reader.predict_score(roi, max_points=10)
         results.append({"question": i+1, "score": score})
         
         cv2.rectangle(annotated, (coords["x"], coords["y"]), 
@@ -391,16 +406,16 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     }
 
 @app.post("/predict")
-async def predict_handwriting(file: UploadFile = File(...)):
-    """Predicts score from a single snippet using ReaderEngine (ONNX)."""
+async def predict_handwriting(file: UploadFile = File(...), max_points: int = 100):
+    """Predicts score from a single snippet using the integrated advanced handwriting engine."""
     image = await process_upload_to_image(file)
     if image is None: raise HTTPException(status_code=400, detail="Invalid image or PDF file")
-    score = reader.predict_score(image)
+    score = reader.predict_score(image, max_points=max_points)
     return {"score": score}
 
 @app.get("/api/predict/status")
 async def predict_status():
-    return {"status": "running", "engine": "onnxruntime"}
+    return {"status": "running", "engine": reader.hw_recognizer.engine}
 
 # Mount static files to serve the annotated images
 from fastapi.staticfiles import StaticFiles
