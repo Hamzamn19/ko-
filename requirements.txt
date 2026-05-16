@@ -5,7 +5,8 @@ reportlab==4.1.0
 qrcode==7.4.2
 pillow==10.2.0
 SQLAlchemy==2.0.29
-opencv-python==4.9.0.80
-tensorflow==2.15.0
+opencv-python-headless==4.9.0.80
+onnxruntime==1.17.1
 numpy==1.26.4
 python-multipart==0.0.9
+pymupdf==1.24.2

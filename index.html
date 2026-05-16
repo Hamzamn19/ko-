@@ -3,188 +3,189 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Cover Generator</title>
+    <title>EdTech AI - Dashboard</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.08); width: 100%; max-width: 550px; margin-bottom: 20px; }
-        h2 { margin-top: 0; color: #1a1a1a; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
-        .form-group { margin-bottom: 18px; }
-        label { display: block; margin-bottom: 8px; font-weight: 600; color: #444; }
-        input[type="text"], input[type="number"], input[type="file"] { width: 100%; padding: 12px; border: 1.5px solid #ddd; border-radius: 6px; box-sizing: border-box; transition: border-color 0.2s; }
-        input:focus { border-color: #007bff; outline: none; }
-        button { width: 100%; padding: 12px; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background-color 0.2s; }
-        .btn-generate { background-color: #28a745; }
-        .btn-generate:hover { background-color: #218838; }
-        .btn-scan { background-color: #007bff; }
-        .btn-scan:hover { background-color: #0069d9; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
-        #result, #scanResult { margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #007bff; border-radius: 4px; display: none; }
-        .score-item { display: inline-block; background: #e9ecef; padding: 5px 10px; margin: 5px; border-radius: 15px; font-size: 0.9em; }
-        .section-divider { margin: 30px 0; border-top: 1px dashed #ccc; }
+        :root { --primary: #2563eb; --success: #16a34a; --bg: #f8fafc; --text: #1e293b; }
+        body { font-family: 'Inter', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background-color: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 100%; max-width: 600px; margin-bottom: 24px; border: 1px solid #e2e8f0; }
+        h1 { font-size: 1.5rem; margin: 0 0 20px 0; display: flex; align-items: center; gap: 10px; }
+        h2 { font-size: 1.1rem; margin: 0 0 16px 0; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 0.9rem; }
+        input[type="text"], input[type="number"], input[type="file"] { width: 100%; padding: 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 0.95rem; }
+        input:focus { border-color: var(--primary); outline: none; }
+        button { width: 100%; padding: 12px; color: white; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
+        .btn-green { background-color: var(--success); }
+        .btn-green:hover { background-color: #15803d; }
+        .btn-blue { background-color: var(--primary); }
+        .btn-blue:hover { background-color: #1d4ed8; }
+        .btn-outline { background-color: transparent; border: 1.5px solid #e2e8f0; color: #64748b; }
+        
+        .result-box { margin-top: 20px; padding: 16px; border-radius: 8px; display: none; border: 1px solid #e2e8f0; }
+        .success-box { background-color: #f0fdf4; border-left: 4px solid var(--success); }
+        .info-box { background-color: #eff6ff; border-left: 4px solid var(--primary); }
+        
+        .score-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-top: 10px; }
+        .score-card { background: white; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; text-align: center; }
+        .score-val { font-size: 1.2rem; font-weight: bold; color: var(--primary); }
+        .score-label { font-size: 0.7rem; color: #94a3b8; }
+        .admin-link { text-decoration: none; color: var(--primary); font-size: 0.9rem; font-weight: 500; margin-bottom: 20px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>1. Generate Exam Template</h2>
-    <form id="examForm">
-        <div class="form-group">
-            <label for="course_code">Course Code</label>
-            <input type="text" id="course_code" name="course_code" placeholder="e.g., PHY6202" required>
-        </div>
-        <div class="form-group">
-            <label for="course_name">Course Name</label>
-            <input type="text" id="course_name" name="course_name" placeholder="e.g., Advanced Physics" required>
-        </div>
-        <div class="form-group">
-            <label for="instructor_name">Instructor Name</label>
-            <input type="text" id="instructor_name" name="instructor_name" placeholder="e.g., Dr. Smith" required>
-        </div>
-        <div class="form-group">
-            <label for="question_count">Question Count (Max 20)</label>
-            <input type="number" id="question_count" name="question_count" min="1" max="20" value="10" required>
-        </div>
-        <button type="submit" id="submitBtn" class="btn-generate">Generate & Download PDF</button>
-    </form>
+    <a href="/admin" class="admin-link">Go to Admin DB Browser →</a>
 
-    <div id="result">
-        <strong>Status:</strong> <span id="statusText"></span><br>
-        <strong>Exam ID:</strong> <span id="examIdText" style="font-family: monospace; background: #eee; padding: 2px 5px;"></span>
-        <p style="font-size: 0.85em; color: #666;">Copy this ID to use in the scanning step below.</p>
+    <!-- SECTION 1: TEMPLATE GENERATION -->
+    <div class="container">
+        <h1>📝 1. Generate Template</h1>
+        <form id="genForm">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label>Course Code</label>
+                    <input type="text" id="course_code" placeholder="e.g. PHY101" required>
+                </div>
+                <div class="form-group">
+                    <label>Instructor</label>
+                    <input type="text" id="instructor" placeholder="e.g. Dr. Thorne" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Course Name</label>
+                <input type="text" id="course_name" placeholder="e.g. Quantum Physics" required>
+            </div>
+            <div class="form-group">
+                <label>Question Count</label>
+                <input type="number" id="q_count" min="1" max="20" value="10" required>
+            </div>
+            <button type="submit" id="genBtn" class="btn-green">Generate & Download PDF</button>
+        </form>
+
+        <div id="genResult" class="result-box success-box">
+            <div style="font-weight: bold; color: #166534;">Template Ready!</div>
+            <div style="font-size: 0.85rem; margin-top: 4px;">
+                Exam ID: <code id="examIdVal" style="background: #dcfce7; padding: 2px 4px; border-radius: 4px;"></code>
+            </div>
+        </div>
     </div>
-</div>
 
-<div class="container">
-    <h2>2. Scan Filled Paper</h2>
-    <form id="scanForm">
-        <div class="form-group">
-            <label for="scan_exam_id">Exam ID</label>
-            <input type="text" id="scan_exam_id" name="exam_id" placeholder="Paste the Exam ID here" required>
-        </div>
-        <div class="form-group">
-            <label for="paper_file">Upload Scanned Image (JPG/PNG)</label>
-            <input type="file" id="paper_file" name="file" accept="image/*" required>
-        </div>
-        <button type="submit" id="scanBtn" class="btn-scan">Scan & Process Paper</button>
-    </form>
+    <!-- SECTION 2: FULL PAPER SCANNER (Automatic QR Detection) -->
+    <div class="container">
+        <h1>🔍 2. AI Scanner (Full Paper)</h1>
+        <p style="font-size: 0.85rem; color: #64748b; margin-top: -15px; margin-bottom: 20px;">AI will automatically detect the Exam ID from the QR code on the paper.</p>
+        <form id="scanForm">
+            <div class="form-group">
+                <label>Upload Scanned Sheet (PDF or Image)</label>
+                <input type="file" id="scan_file" accept=".pdf,image/*" required>
+            </div>
+            <button type="submit" id="scanBtn" class="btn-blue">Start AI Processing</button>
+        </form>
 
-    <div id="scanResult">
-        <h3 style="margin-top: 0;">Scan Results</h3>
-        <p><strong>Student ID:</strong> <span id="resStudentId" style="font-size: 1.2em; color: #007bff; font-weight: bold;"></span></p>
-        <strong>Scores:</strong>
-        <div id="resScores"></div>
+        <div id="scanResult" class="result-box info-box">
+            <div style="margin-bottom: 12px; border-bottom: 1px solid #dbeafe; padding-bottom: 8px;">
+                <div style="font-size: 0.8rem; color: #64748b;">DETECTED EXAM ID</div>
+                <div id="resExamId" style="font-family: monospace; font-weight: bold; color: var(--text);"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span style="font-weight: 600;">Student ID: <span id="resStudentId" style="color: var(--primary);"></span></span>
+                <span style="font-size: 0.8rem; color: #64748b;">Status: <span style="color:var(--success); font-weight: 600;">Success</span></span>
+            </div>
+            <div class="score-grid" id="resScoreGrid"></div>
+        </div>
     </div>
-</div>
 
-<script>
-    // --- GENERATION LOGIC ---
-    document.getElementById('examForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const submitBtn = document.getElementById('submitBtn');
-        const resultDiv = document.getElementById('result');
-        const statusText = document.getElementById('statusText');
-        const examIdText = document.getElementById('examIdText');
-        
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Generating...';
-        resultDiv.style.display = 'none';
+    <!-- SECTION 3: SNIPPET PREDICTOR -->
+    <div class="container">
+        <h1>🎯 3. Snippet Predictor</h1>
+        <form id="predictForm">
+            <div class="form-group">
+                <label>Upload Snippet (Image or PDF)</label>
+                <input type="file" id="predict_file" accept=".pdf,image/*" required>
+            </div>
+            <button type="submit" id="predictBtn" class="btn-outline">Predict Score</button>
+        </form>
+        <div id="predictResult" class="result-box" style="background: #f8fafc; border-style: dashed; text-align: center;">
+            <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 4px;">PREDICTED VALUE</div>
+            <div id="predictVal" style="font-size: 2.5rem; font-weight: 800; color: var(--text);"></div>
+        </div>
+    </div>
 
-        const payload = {
-            course_code: document.getElementById('course_code').value,
-            course_name: document.getElementById('course_name').value,
-            instructor_name: document.getElementById('instructor_name').value,
-            question_count: parseInt(document.getElementById('question_count').value)
-        };
+    <script>
+        // --- 1. Generation ---
+        document.getElementById('genForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('genBtn');
+            btn.disabled = true; btn.textContent = 'Generating...';
+            try {
+                const res = await fetch('/api/generate-cover', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        course_code: document.getElementById('course_code').value,
+                        course_name: document.getElementById('course_name').value,
+                        instructor_name: document.getElementById('instructor').value,
+                        question_count: parseInt(document.getElementById('q_count').value)
+                    })
+                });
+                const data = await res.json();
+                const link = document.createElement('a');
+                link.href = `data:application/pdf;base64,${data.pdf_base64}`;
+                link.download = `Exam_${data.exam_id}.pdf`;
+                link.click();
+                document.getElementById('examIdVal').textContent = data.exam_id;
+                document.getElementById('genResult').style.display = 'block';
+            } catch (err) { alert('Error generating template'); }
+            finally { btn.disabled = false; btn.textContent = 'Generate & Download PDF'; }
+        });
 
-        try {
-            const response = await fetch('/api/generate-cover', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) { throw new Error(`Server error: ${response.statusText}`); }
-            const data = await response.json();
+        // --- 2. Full Scan ---
+        document.getElementById('scanForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('scanBtn');
+            const file = document.getElementById('scan_file').files[0];
+            btn.disabled = true; btn.textContent = 'AI is reading paper...';
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/scan-paper', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!res.ok) { 
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Processing failed');
+                }
+                const data = await res.json();
+                document.getElementById('resExamId').textContent = data.exam_id;
+                document.getElementById('resStudentId').textContent = data.student_id;
+                const grid = document.getElementById('resScoreGrid');
+                grid.innerHTML = data.scores.map(s => `
+                    <div class="score-card">
+                        <div class="score-label">Q${s.question}</div>
+                        <div class="score-val">${s.score}</div>
+                    </div>
+                `).join('');
+                document.getElementById('scanResult').style.display = 'block';
+            } catch (err) { alert(err.message); }
+            finally { btn.disabled = false; btn.textContent = 'Start AI Processing'; }
+        });
 
-            // Download PDF
-            const byteCharacters = atob(data.pdf_base64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) { byteNumbers[i] = byteCharacters.charCodeAt(i); }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], {type: 'application/pdf'});
-            const link = document.createElement('a');
-            link.href = window.URL.createObjectURL(blob);
-            link.download = `${data.exam_id}_cover.pdf`;
-            link.click();
-
-            // Update UI
-            statusText.textContent = 'Success! PDF Downloaded.';
-            statusText.style.color = 'green';
-            examIdText.textContent = data.exam_id;
-            document.getElementById('scan_exam_id').value = data.exam_id; // Auto-fill scan ID
-            resultDiv.style.display = 'block';
-        } catch (error) {
-            statusText.textContent = `Failed: ${error.message}`;
-            statusText.style.color = 'red';
-            resultDiv.style.display = 'block';
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Generate & Download PDF';
-        }
-    });
-
-    // --- SCANNING LOGIC ---
-    document.getElementById('scanForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const scanBtn = document.getElementById('scanBtn');
-        const scanResultDiv = document.getElementById('scanResult');
-        const resStudentId = document.getElementById('resStudentId');
-        const resScores = document.getElementById('resScores');
-        
-        const examId = document.getElementById('scan_exam_id').value;
-        const fileInput = document.getElementById('paper_file');
-        
-        if (!fileInput.files[0]) return;
-
-        scanBtn.disabled = true;
-        scanBtn.textContent = 'Processing Paper (Wait)...';
-        scanResultDiv.style.display = 'none';
-        resScores.innerHTML = '';
-
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-
-        try {
-            const response = await fetch(`/api/scan-paper?exam_id=${examId}`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) { 
-                const errData = await response.json();
-                throw new Error(errData.detail || 'Processing failed'); 
-            }
-
-            const data = await response.json();
-            
-            // Display Results
-            resStudentId.textContent = data.student_id;
-            data.scores.forEach(s => {
-                const span = document.createElement('span');
-                span.className = 'score-item';
-                span.innerHTML = `<strong>Q${s.question}:</strong> ${s.score}`;
-                resScores.appendChild(span);
-            });
-            
-            scanResultDiv.style.display = 'block';
-            scanResultDiv.style.borderLeftColor = '#28a745';
-        } catch (error) {
-            alert(`Error: ${error.message}`);
-        } finally {
-            scanBtn.disabled = false;
-            scanBtn.textContent = 'Scan & Process Paper';
-        }
-    });
-</script>
-
+        // --- 3. Snippet Predict ---
+        document.getElementById('predictForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('predictBtn');
+            const file = document.getElementById('predict_file').files[0];
+            btn.disabled = true; btn.textContent = 'Predicting...';
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/predict', { method: 'POST', body: formData });
+                const data = await res.json();
+                document.getElementById('predictVal').textContent = data.score;
+                document.getElementById('predictResult').style.display = 'block';
+            } catch (err) { alert('Prediction failed'); }
+            finally { btn.disabled = false; btn.textContent = 'Predict Score'; }
+        });
+    </script>
 </body>
 </html>
