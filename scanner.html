@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scanner - Apex Assessment Platform</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260516j" rel="stylesheet" />
+    <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body>
+    <div class="ambient-layer" aria-hidden="true">
+        <div class="aurora-layer" aria-hidden="true"></div>
+        <span class="ambient-orb orb-a"></span>
+        <span class="ambient-orb orb-b"></span>
+        <span class="ambient-orb orb-c"></span>
+    </div>
+
+    <div class="app-shell">
+        <aside id="app-nav" class="nav-panel glass-surface">
+            <div class="brand-box">
+                <div class="brand-badge">
+                    <span class="material-symbols-outlined">workspace_premium</span>
+                </div>
+                <div>
+                    <p class="brand-title">Apex Assessment Platform</p>
+                    <p class="brand-subtitle">Institutional Edition</p>
+                </div>
+            </div>
+
+            <button id="nav-close" class="icon-btn mobile-only" type="button" aria-label="Close navigation">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+
+            <nav class="nav-links">
+                <a class="nav-link" href="/admin">
+                    <span class="material-symbols-outlined">space_dashboard</span>
+                    <span>Dashboard</span>
+                </a>
+                <a class="nav-link" href="/">
+                    <span class="material-symbols-outlined">note_add</span>
+                    <span>Cover Generator</span>
+                </a>
+                <a class="nav-link" href="/scanner">
+                    <span class="material-symbols-outlined">scan</span>
+                    <span>Scanner</span>
+                </a>
+                <a class="nav-link" href="/student-360">
+                    <span class="material-symbols-outlined">groups</span>
+                    <span>Students 360</span>
+                </a>
+            </nav>
+
+            <div class="nav-footer">
+                <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">Recognition Suite</p>
+                <p class="mt-1 text-sm font-bold">Upload, detect, and classify answer sheets instantly.</p>
+            </div>
+        </aside>
+
+        <section class="workspace">
+            <header class="top-shell glass-surface">
+                <div class="top-actions">
+                    <button id="nav-toggle" class="icon-btn mobile-nav-toggle" type="button" aria-label="Open navigation">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <div class="top-meta">
+                        <span class="page-kicker">Recognition Pipeline</span>
+                        <span class="page-title">AI Scanner + Snippet Predictor</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <button class="ghost-btn hide-on-mobile" type="button">
+                        <span class="material-symbols-outlined">network_check</span>
+                        Inference Active
+                    </button>
+                    <button class="icon-btn" onclick="toggleTheme()" type="button" aria-label="Toggle theme">
+                        <span id="theme-icon" class="material-symbols-outlined">light_mode</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <section class="panel-grid">
+                    <article class="card glass-soft panel-span-8">
+                        <h2 class="card-title">Full Paper Scanner</h2>
+                        <p class="card-subtitle">Reads exam ID, student ID, and per-question values from uploaded scans.</p>
+
+                        <form id="scanForm" class="mt-4 space-y-4">
+                            <label class="upload-zone" for="scan_file">
+                                <input id="scan_file" type="file" accept=".pdf,image/*" required />
+                                <div>
+                                    <p class="text-sm font-semibold">Drop or select a scanned sheet</p>
+                                    <p id="scanFileLabel" class="text-xs mt-1" style="color: var(--text-secondary);">PDF or image</p>
+                                </div>
+                            </label>
+                            <button id="scanBtn" type="submit" class="primary-btn w-full h-[46px] justify-center">
+                                <span class="material-symbols-outlined">sync</span>
+                                Initialize AI
+                            </button>
+                        </form>
+
+                        <section id="scanResult" class="mt-4 hide">
+                            <div class="card glass-soft">
+                                <div class="flex items-end justify-between gap-3 mb-3">
+                                    <div>
+                                        <p class="field-label">Exam ID</p>
+                                        <p id="resExamId" class="font-mono text-xs"></p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="field-label">Student ID</p>
+                                        <p id="resStudentId" class="font-mono text-sm font-bold"></p>
+                                    </div>
+                                </div>
+                                <div id="resScoreGrid" class="score-grid mb-3"></div>
+                                <div class="rounded-2xl overflow-hidden border" style="border-color: var(--line-soft);">
+                                    <img id="resAnnotatedImg" class="w-full" src="" alt="Detection map" />
+                                </div>
+                            </div>
+                        </section>
+                    </article>
+
+                    <article class="card glass-soft panel-span-4">
+                        <h2 class="card-title">Single Box Predictor</h2>
+                        <p class="card-subtitle">Predict one isolated score field.</p>
+
+                        <form id="predictForm" class="mt-4 space-y-4">
+                            <label class="field">
+                                <span class="field-label">Snippet Upload</span>
+                                <input id="predict_file" class="glass-input" type="file" accept=".pdf,image/*" required />
+                            </label>
+                            <button id="predictBtn" type="submit" class="ghost-btn w-full h-[44px] justify-center">
+                                <span class="material-symbols-outlined">analytics</span>
+                                Predict
+                            </button>
+                        </form>
+
+                        <div id="predictResult" class="card glass-soft mt-4 hide text-center">
+                            <p class="field-label mb-2">Predicted Value</p>
+                            <p id="predictVal" class="kpi-value"></p>
+                        </div>
+                    </article>
+                </section>
+            </main>
+        </section>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/static/Aurora.js?v=20260516e"></script>
+    <script src="/static/dashboard-ui.js?v=20260516i"></script>
+    <script>
+        document.getElementById('scan_file').addEventListener('change', function () {
+            const file = this.files && this.files[0];
+            const label = document.getElementById('scanFileLabel');
+            label.textContent = file ? file.name : 'PDF or image';
+        });
+
+        document.getElementById('scanForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('scanBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> AI...';
+
+            const formData = new FormData();
+            formData.append('file', document.getElementById('scan_file').files[0]);
+
+            try {
+                const res = await fetch('/api/scan-paper', { method: 'POST', body: formData });
+                if (!res.ok) throw new Error('Scan failed');
+                const data = await res.json();
+
+                document.getElementById('resExamId').textContent = data.exam_id;
+                document.getElementById('resStudentId').textContent = data.student_id;
+                document.getElementById('resAnnotatedImg').src = `${data.annotated_image_url}?t=${Date.now()}`;
+                document.getElementById('resScoreGrid').innerHTML = data.scores.map((s) => `
+                    <div class="score-box glass-soft">
+                        <p class="text-[10px] font-bold" style="color: var(--text-secondary);">Q${s.question}</p>
+                        <p class="font-mono text-base font-bold">${s.score}</p>
+                    </div>
+                `).join('');
+                document.getElementById('scanResult').classList.remove('hide');
+            } catch (err) {
+                alert('Failed');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Initialize AI';
+            }
+        });
+
+        document.getElementById('predictForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('predictBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> Predicting';
+
+            const formData = new FormData();
+            formData.append('file', document.getElementById('predict_file').files[0]);
+
+            try {
+                const res = await fetch('/predict', { method: 'POST', body: formData });
+                if (!res.ok) throw new Error('Predict failed');
+                const data = await res.json();
+                document.getElementById('predictVal').textContent = data.score;
+                document.getElementById('predictResult').classList.remove('hide');
+            } catch (err) {
+                alert('Failed');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined">analytics</span> Predict';
+            }
+        });
+    </script>
+</body>
+</html>

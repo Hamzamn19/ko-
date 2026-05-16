@@ -1,112 +1,197 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hackathon Admin Dashboard</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; }
-        .container { max-width: 1200px; margin: auto; }
-        h1 { color: #343a40; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; }
-        h2 { color: #495057; margin-top: 30px; }
-        table { width: 100%; border-collapse: collapse; background: white; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
-        th { background-color: #e9ecef; color: #495057; }
-        tr:hover { background-color: #f1f3f5; }
-        .status-processing { color: #f0ad4e; font-weight: bold; }
-        .status-completed { color: #5cb85c; font-weight: bold; }
-        .status-needs_review { color: #d9534f; font-weight: bold; }
-        .nav-links { margin-bottom: 20px; }
-        .nav-links a { margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold; }
-    </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - Apex Assessment Platform</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260516j" rel="stylesheet" />
+    <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
 </head>
 <body>
-
-<div class="container">
-    <h1>Hackathon Admin Dashboard</h1>
-    
-    <div class="nav-links">
-        <a href="/">← Back to Generator</a>
-        <a href="/docs">Swagger API Docs</a>
+    <div class="ambient-layer" aria-hidden="true">
+        <div class="aurora-layer" aria-hidden="true"></div>
+        <span class="ambient-orb orb-a"></span>
+        <span class="ambient-orb orb-b"></span>
+        <span class="ambient-orb orb-c"></span>
     </div>
 
-    <section id="exams-section">
-        <h2>Created Exams</h2>
-        <table id="exams-table">
-            <thead>
-                <tr>
-                    <th>Exam ID</th>
-                    <th>Course</th>
-                    <th>Instructor</th>
-                    <th>Questions</th>
-                    <th>Created At</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Populated by JS -->
-            </tbody>
-        </table>
-    </section>
+    <div class="app-shell">
+        <aside id="app-nav" class="nav-panel glass-surface">
+            <div class="brand-box">
+                <div class="brand-badge">
+                    <span class="material-symbols-outlined">workspace_premium</span>
+                </div>
+                <div>
+                    <p class="brand-title">Apex Assessment Platform</p>
+                    <p class="brand-subtitle">Institutional Edition</p>
+                </div>
+            </div>
 
-    <section id="papers-section">
-        <h2>Scanned Papers</h2>
-        <table id="papers-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Exam ID</th>
-                    <th>Student #</th>
-                    <th>Status</th>
-                    <th>Created At</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Populated by JS -->
-            </tbody>
-        </table>
-    </section>
-</div>
+            <button id="nav-close" class="icon-btn mobile-only" type="button" aria-label="Close navigation">
+                <span class="material-symbols-outlined">close</span>
+            </button>
 
-<script>
-    async function fetchData() {
-        try {
-            // Fetch Exams
-            const examsRes = await fetch('/api/exams');
-            const exams = await examsRes.json();
-            const examsBody = document.querySelector('#exams-table tbody');
-            examsBody.innerHTML = exams.map(exam => `
-                <tr>
-                    <td><code>${exam.id}</code></td>
-                    <td>${exam.course_code} - ${exam.course_name}</td>
-                    <td>${exam.instructor_name}</td>
-                    <td>${exam.question_count}</td>
-                    <td>${new Date(exam.created_at).toLocaleString()}</td>
-                </tr>
-            `).join('');
+            <nav class="nav-links">
+                <a class="nav-link" href="/admin">
+                    <span class="material-symbols-outlined">space_dashboard</span>
+                    <span>Dashboard</span>
+                </a>
+                <a class="nav-link" href="/">
+                    <span class="material-symbols-outlined">note_add</span>
+                    <span>Cover Generator</span>
+                </a>
+                <a class="nav-link" href="/scanner">
+                    <span class="material-symbols-outlined">scan</span>
+                    <span>Scanner</span>
+                </a>
+                <a class="nav-link" href="/student-360">
+                    <span class="material-symbols-outlined">groups</span>
+                    <span>Students 360</span>
+                </a>
+            </nav>
 
-            // Fetch Papers
-            const papersRes = await fetch('/api/papers');
-            const papers = await papersRes.json();
-            const papersBody = document.querySelector('#papers-table tbody');
-            papersBody.innerHTML = papers.map(paper => `
-                <tr>
-                    <td>${paper.id}</td>
-                    <td><code>${paper.exam_id}</code></td>
-                    <td>${paper.student_number || '<i>Pending</i>'}</td>
-                    <td><span class="status-${paper.status.toLowerCase()}">${paper.status}</span></td>
-                    <td>${new Date(paper.created_at).toLocaleString()}</td>
-                </tr>
-            `).join('');
+            <div class="nav-footer">
+                <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">Operations Feed</p>
+                <p class="mt-1 text-sm font-bold">Realtime exam, scan, and student telemetry.</p>
+            </div>
+        </aside>
 
-        } catch (err) {
-            console.error("Failed to fetch dashboard data:", err);
+        <section class="workspace">
+            <header class="top-shell glass-surface">
+                <div class="top-actions">
+                    <button id="nav-toggle" class="icon-btn mobile-nav-toggle" type="button" aria-label="Open navigation">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <div class="top-meta">
+                        <span class="page-kicker">Operations Command</span>
+                        <span class="page-title">Institution Dashboard</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <button class="ghost-btn hide-on-mobile" type="button">
+                        <span class="material-symbols-outlined">file_download</span>
+                        Export
+                    </button>
+                    <button class="icon-btn" onclick="toggleTheme()" type="button" aria-label="Toggle theme">
+                        <span id="theme-icon" class="material-symbols-outlined">light_mode</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <section class="kpi-grid">
+                    <article class="card glass-soft kpi">
+                        <p class="kpi-label">Templates</p>
+                        <p id="metric-exams" class="kpi-value">0</p>
+                        <p class="kpi-foot">Generated cover documents</p>
+                    </article>
+                    <article class="card glass-soft kpi">
+                        <p class="kpi-label">Scanned Papers</p>
+                        <p id="metric-papers" class="kpi-value">0</p>
+                        <p class="kpi-foot">Processed through AI scanner</p>
+                    </article>
+                    <article class="card glass-soft kpi">
+                        <p class="kpi-label">Students</p>
+                        <p id="metric-students" class="kpi-value">0</p>
+                        <p class="kpi-foot">Registered in directory</p>
+                    </article>
+                </section>
+
+                <section class="panel-grid">
+                    <article class="card glass-soft panel-span-8">
+                        <h2 class="card-title">Recent Exams</h2>
+                        <p class="card-subtitle">Latest templates in the registry</p>
+                        <div class="table-wrap mt-4">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Exam ID</th>
+                                        <th>Course</th>
+                                        <th>Instructor</th>
+                                        <th>Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exams-table-body"></tbody>
+                            </table>
+                        </div>
+                    </article>
+
+                    <article class="card glass-soft panel-span-4">
+                        <h2 class="card-title">Activity Feed</h2>
+                        <p class="card-subtitle">Most recent scan events</p>
+                        <div id="papers-list" class="feed-list mt-4"></div>
+                    </article>
+                </section>
+            </main>
+        </section>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/static/Aurora.js?v=20260516e"></script>
+    <script src="/static/dashboard-ui.js?v=20260516i"></script>
+    <script>
+        async function fetchData() {
+            try {
+                const examsRes = await fetch('/api/exams');
+                const exams = await examsRes.json();
+                document.getElementById('metric-exams').textContent = exams.length;
+
+                const examsBody = document.getElementById('exams-table-body');
+                examsBody.innerHTML = exams.map((exam) => `
+                    <tr>
+                        <td class="font-mono text-xs">${exam.id.substring(0, 12)}...</td>
+                        <td>${exam.course_code}</td>
+                        <td>${exam.instructor_name}</td>
+                        <td>${new Date(exam.created_at).toLocaleDateString()}</td>
+                    </tr>
+                `).join('');
+
+                const papersRes = await fetch('/api/papers');
+                const papers = await papersRes.json();
+                document.getElementById('metric-papers').textContent = papers.length;
+
+                papers.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                const papersList = document.getElementById('papers-list');
+                papersList.innerHTML = papers.slice(0, 10).map((paper) => {
+                    const completed = (paper.status || '').toLowerCase() === 'completed';
+                    return `
+                        <div class="feed-item glass-soft">
+                            <div>
+                                <p class="font-mono text-xs font-bold">#${String(paper.id).substring(0, 8)}</p>
+                                <p class="text-xs" style="color: var(--text-secondary);">${paper.student_number || 'AI Scanning...'}</p>
+                            </div>
+                            <span class="pill ${completed ? 'status-completed' : 'status-processing'}">${paper.status}</span>
+                        </div>
+                    `;
+                }).join('');
+
+                const studentsRes = await fetch('/api/students');
+                const students = await studentsRes.json();
+                document.getElementById('metric-students').textContent = students.length;
+            } catch (err) {
+                console.error('Failed to fetch dashboard data:', err);
+            }
         }
-    }
 
-    fetchData();
-    // Refresh every 10 seconds for real-time feel
-    setInterval(fetchData, 10000);
-</script>
-
+        fetchData();
+        setInterval(fetchData, 10000);
+    </script>
 </body>
 </html>
+

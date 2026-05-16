@@ -72,6 +72,13 @@ async def get_admin_dashboard():
     with open("admin.html", "r") as f:
         return f.read()
 
+@app.get("/scanner", response_class=HTMLResponse)
+async def get_scanner():
+    if not os.path.exists("scanner.html"):
+        raise HTTPException(status_code=404, detail="scanner.html not found")
+    with open("scanner.html", "r") as f:
+        return f.read()
+
 @app.get("/api/exams")
 async def list_exams(db: Session = Depends(get_db)):
     return db.query(models.Exam).order_by(models.Exam.created_at.desc()).all()
