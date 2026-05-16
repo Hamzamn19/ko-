@@ -4,10 +4,12 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for Pillow/ReportLab
+# Install system dependencies required for Pillow/ReportLab/OpenCV
 RUN apt-get update && apt-get install -y \
     libjpeg-dev \
     zlib1g-dev \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
