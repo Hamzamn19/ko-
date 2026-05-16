@@ -175,7 +175,7 @@ def draw_tabular_header_with_qr(c, start_x, start_y, width, info_dict, qr_img_bu
     full_w = width - (2 * MARGIN)
     LEFT_WIDTH, RIGHT_WIDTH = full_w * 0.60, full_w * 0.40
     header_height = 180
-    # Logo drawing section
+    # Logo drawing section with optimization
     logo_path = "Gemini_Generated_Image_4xrcth4xrcth4xrc.png"
     logo_box_w = LEFT_WIDTH * 0.50
     logo_box_h = 75
@@ -183,11 +183,25 @@ def draw_tabular_header_with_qr(c, start_x, start_y, width, info_dict, qr_img_bu
     
     from reportlab.lib.utils import ImageReader
     if os.path.exists(logo_path):
-        # Draw the logo image, centered and scaled to fit the box
-        # We use preserveAspectRatio and anchor='c' for professional fitting
-        c.drawImage(logo_path, start_x + 5, start_y - logo_box_h + 5, 
-                    width=logo_box_w - 10, height=logo_box_h - 10, 
-                    preserveAspectRatio=True, mask='auto', anchor='c')
+        try:
+            # OPTIMIZATION: Resize and compress image to keep PDF small
+            img = Image.open(logo_path)
+            img.thumbnail((400, 400), Image.Resampling.LANCZOS)
+            
+            # Save to buffer as JPEG with 85% quality
+            logo_buf = io.BytesIO()
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(logo_buf, format="JPEG", quality=85, optimize=True)
+            logo_buf.seek(0)
+            
+            c.drawImage(ImageReader(logo_buf), start_x + 5, start_y - logo_box_h + 5, 
+                        width=logo_box_w - 10, height=logo_box_h - 10, 
+                        preserveAspectRatio=True, mask='auto', anchor='c')
+        except Exception as e:
+            print(f"Logo processing failed: {e}")
+            c.setFont("Helvetica-Bold", 10)
+            c.drawCentredString(start_x + (logo_box_w / 2), start_y - 40, "LOGO ERROR")
     else:
         c.setFont("Helvetica-Bold", 10)
         c.drawCentredString(start_x + (logo_box_w / 2), start_y - 40, "LOGO NOT FOUND")
