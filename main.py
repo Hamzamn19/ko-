@@ -2,6 +2,7 @@ import io
 import uuid
 import base64
 import os
+import json
 from typing import Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
@@ -31,6 +32,11 @@ import models
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Exam Cover API")
+
+# Ensure static directory exists
+STATIC_DIR = "static"
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
 
 # A4 dimensions in points (1 mm ~ 2.83465 points)
 A4_WIDTH, A4_HEIGHT = A4
@@ -91,9 +97,53 @@ async def process_upload_to_image(file: UploadFile) -> np.ndarray:
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         return image
 
-def convert_to_top_left(x: float, y_bottom_left: float, width: float, height: float) -> Dict[str, float]:
-    y_top_left = A4_HEIGHT - (y_bottom_left + height)
-    return {"x": round(x, 2), "y": round(y_top_left, 2), "width": round(width, 2), "height": round(height, 2)}
+def calculate_layout_json(metadata: ExamMetadata, exam_id: str) -> dict:
+    """Calculates all absolute PDF coordinates beforehand and packages them into a JSON dict."""
+    layout = {"id": exam_id, "qr": [], "sid": [], "q": []}
+    
+    full_w = A4_WIDTH - (2 * MARGIN)
+    LEFT_WIDTH = full_w * 0.60
+    RIGHT_WIDTH = full_w * 0.40
+    
+    start_y = A4_HEIGHT - MARGIN
+    
+    # 1. QR Code
+    qr_size = 70
+    qr_x = MARGIN + (LEFT_WIDTH * 0.50) + (LEFT_WIDTH * 0.50 - qr_size) / 2
+    qr_y_bottom = start_y - 75 + (75 - qr_size) / 2
+    qr_y_top = A4_HEIGHT - (qr_y_bottom + qr_size)
+    layout["qr"] = [round(qr_x), round(qr_y_top), round(qr_size), round(qr_size)]
+    
+    # 2. Student ID Box
+    header_height = 180
+    sid_x = MARGIN + LEFT_WIDTH
+    sid_y_bottom = start_y - header_height
+    sid_y_top = A4_HEIGHT - (sid_y_bottom + header_height)
+    layout["sid"] = [round(sid_x), round(sid_y_top), round(RIGHT_WIDTH), round(header_height)]
+    
+    # 3. Question Boxes
+    box_w = (full_w - (4 * 3*mm)) / 5
+    box_h = 35 * mm
+    spacing = 3 * mm
+    curr_x = MARGIN
+    header_y_end = start_y - header_height
+    curr_y = header_y_end - 10*mm
+    
+    for i in range(metadata.question_count):
+        if curr_x + box_w > A4_WIDTH - MARGIN + 1:
+            curr_x = MARGIN
+            curr_y -= (box_h + 10*mm)
+            
+        bx = curr_x + 4.0
+        by_bottom = curr_y - 20.0 - 4.0 - (box_h - 20.0 - 18.0)
+        bw = box_w - 8.0
+        bh = box_h - 20.0 - 18.0
+        by_top = A4_HEIGHT - (by_bottom + bh)
+        
+        layout["q"].append([round(bx), round(by_top), round(bw), round(bh)])
+        curr_x += box_w + spacing
+        
+    return layout
 
 # --- PDF DRAWING LOGIC ---
 
@@ -150,7 +200,6 @@ def draw_question_box(c, x, y, w, h, q_num, max_points):
     box_w, box_h = w - 8.0, h - 20.0 - 18.0; bx, by = x + 4.0, y - 20.0 - 4.0 - box_h
     c.saveState(); c.setStrokeColor(colors.lightgrey); c.roundRect(bx, by, box_w, box_h, 4.0, stroke=1, fill=0); c.restoreState()
     c.setFont("Helvetica", 6); c.drawCentredString(bx + (box_w/2), by - 6, f"0-{max_points}")
-    return {"x": bx, "y": by, "width": box_w, "height": box_h}
 
 # --- ENDPOINTS ---
 
@@ -158,22 +207,34 @@ def draw_question_box(c, x, y, w, h, q_num, max_points):
 async def generate_cover_endpoint(metadata: ExamMetadata, db: Session = Depends(get_db)):
     try:
         exam_id = f"{metadata.course_code}-{str(uuid.uuid4())[:8]}"
+        
+        # 1. Pre-calculate layout
+        layout_json_dict = calculate_layout_json(metadata, exam_id)
+        
+        # Instead of embedding all data, embed ONLY the exam_id to keep the QR code simple and low resolution
+        qr_data_str = exam_id
+        
+        # Save the full layout structure exactly into the Database
+        layout_data = layout_json_dict
+        
+        # 3. Generate PDF
         buffer = io.BytesIO(); c = canvas.Canvas(buffer, pagesize=A4)
-        qr = qrcode.QRCode(box_size=4, border=1); qr.add_data(exam_id); qr.make(fit=True)
+        qr = qrcode.QRCode(box_size=4, border=0)
+        qr.add_data(qr_data_str); qr.make(fit=True)
         qr_img = qr.make_image(fill_color="black", back_color="white")
         qr_buf = io.BytesIO(); qr_img.save(qr_buf, format="PNG"); qr_buf.seek(0)
-        layout_data = {"grading_boxes": []}
+        
         header_y = draw_tabular_header_with_qr(c, MARGIN, A4_HEIGHT - MARGIN, A4_WIDTH, metadata.dict(), qr_buf)
         full_w = A4_WIDTH - (2 * MARGIN)
-        layout_data["student_id_box"] = convert_to_top_left(MARGIN + (full_w * 0.60), A4_HEIGHT - MARGIN - 180, full_w * 0.40, 180)
         box_w, box_h, spacing = (full_w - (4 * 3*mm)) / 5, 35*mm, 3*mm
         curr_x, curr_y = MARGIN, header_y - 10*mm
         for i in range(metadata.question_count):
             if curr_x + box_w > A4_WIDTH - MARGIN + 1: curr_x, curr_y = MARGIN, curr_y - (box_h + 10*mm)
-            coords = draw_question_box(c, curr_x, curr_y, box_w, box_h, i+1, 10)
-            layout_data["grading_boxes"].append({"question": i+1, "coordinates": convert_to_top_left(coords["x"], coords["y"], coords["width"], coords["height"])})
+            draw_question_box(c, curr_x, curr_y, box_w, box_h, i+1, 10)
             curr_x += box_w + spacing
+            
         c.showPage(); c.save(); buffer.seek(0)
+        
         db_exam = models.Exam(id=exam_id, course_code=metadata.course_code, course_name=metadata.course_name, instructor_name=metadata.instructor_name, question_count=metadata.question_count, layout_data=layout_data)
         db.add(db_exam); db.commit()
         return ExamCoverResponse(exam_id=exam_id, layout_data=layout_data, pdf_base64=base64.b64encode(buffer.read()).decode("utf-8"))
@@ -184,19 +245,70 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     image = await process_upload_to_image(file)
     if image is None: raise HTTPException(status_code=400, detail="Invalid image or PDF file")
     
-    # 1. Automatic QR Code Detection
-    exam_id = reader.detect_qr_code(image)
-    if not exam_id: raise HTTPException(status_code=400, detail="Could not read QR code from paper. Please ensure the QR code is clearly visible.")
+    # 1. Automatic QR Code Detection and Parsing
+    qr_data, qr_points = reader.detect_qr_code(image)
+    if not qr_data: raise HTTPException(status_code=400, detail="Could not read QR code. Ensure it is clearly visible.")
+    
+    exam_id = qr_data
     
     db_exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
     if not db_exam: raise HTTPException(status_code=404, detail=f"Exam layout not found for ID: {exam_id}")
     
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    sid_box = db_exam.layout_data["student_id_box"]
+    annotated = image.copy()
+    
+    qr_layout = db_exam.layout_data
+    
+    # 2. Compute Perspective Transform Matrix (M)
+    M = None
+    if qr_layout and "qr" in qr_layout and qr_points is not None and qr_points.shape == (1, 4, 2):
+        img_pts = qr_points[0].astype(np.float32)
+        
+        # Order points: TL, TR, BR, BL
+        s = img_pts.sum(axis=1)
+        d = np.diff(img_pts, axis=1)
+        ordered_img_pts = np.zeros((4, 2), dtype=np.float32)
+        ordered_img_pts[0] = img_pts[np.argmin(s)] # TL
+        ordered_img_pts[2] = img_pts[np.argmax(s)] # BR
+        ordered_img_pts[1] = img_pts[np.argmin(d)] # TR
+        ordered_img_pts[3] = img_pts[np.argmax(d)] # BL
+        
+        px, py, pw, ph = qr_layout["qr"]
+        pdf_pts = np.float32([
+            [px, py],
+            [px + pw, py],
+            [px + pw, py + ph],
+            [px, py + ph]
+        ])
+        M = cv2.getPerspectiveTransform(pdf_pts, ordered_img_pts)
+
+    def get_mapped_box(pdf_box):
+        """Applies matrix M to a PDF box to get its physical Image pixel coordinates."""
+        if M is None:
+            return {"x": int(pdf_box[0]), "y": int(pdf_box[1]), "width": int(pdf_box[2]), "height": int(pdf_box[3])}
+        x, y, w, h = pdf_box
+        pts = np.float32([[[x, y]], [[x + w, y]], [[x + w, y + h]], [[x, y + h]]])
+        mapped = cv2.perspectiveTransform(pts, M).reshape(-1, 2)
+        min_x, min_y = np.min(mapped, axis=0)
+        max_x, max_y = np.max(mapped, axis=0)
+        return {"x": int(min_x), "y": int(min_y), "width": int(max_x - min_x), "height": int(max_y - min_y)}
+
+    # 3. Process Student ID (Hybrid OMR)
+    sid_pdf_box = qr_layout["sid"]
+    sid_box = get_mapped_box(sid_pdf_box)
+    
+    cv2.rectangle(annotated, (sid_box["x"], sid_box["y"]), 
+                  (sid_box["x"] + sid_box["width"], sid_box["y"] + sid_box["height"]), (255, 0, 0), 2)
+    
     luma_refs = {"white": np.percentile(gray, 95), "black": np.percentile(gray, 5), "grey": np.mean(gray)}
     
     student_id, cols, rows = "", 10, 10
-    gx, gy, gw, gh = sid_box["x"], sid_box["y"] + 35, sid_box["width"], sid_box["height"] - 35
+    # OMR section starts 35 PDF points below the top of the SID box
+    # We must scale this 35 points using the mapped height ratio
+    scale_ratio = sid_box["height"] / sid_pdf_box[3] if sid_pdf_box[3] > 0 else 1.0
+    header_offset = int(35 * scale_ratio)
+    
+    gx, gy, gw, gh = sid_box["x"], sid_box["y"] + header_offset, sid_box["width"], sid_box["height"] - header_offset
     cw, rh = gw / cols, gh / rows
     for c in range(cols):
         digit = None
@@ -205,27 +317,54 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
                 digit = str(r); break
         student_id += digit if digit else "?"
 
-    results = []
-    for q in db_exam.layout_data["grading_boxes"]:
-        coords = q["coordinates"]
-        roi = reader.crop_roi_safely(image, int(coords["x"]), int(coords["y"]), int(coords["width"]), int(coords["height"]), margin_pct=0.1)
-        results.append({"question": q["question"], "score": reader.predict_digit(roi)})
+    cv2.putText(annotated, f"ID: {student_id}", (sid_box["x"], sid_box["y"] - 10), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
-    db_paper = models.ScannedPaper(exam_id=exam_id, student_number=student_id, image_url="placeholder", status=models.ProcessingStatus.COMPLETED)
+    # 4. Process Question Scores
+    results = []
+    
+    for i, qbox in enumerate(qr_layout["q"]):
+        coords = get_mapped_box(qbox)
+        roi = reader.crop_roi_safely(image, coords["x"], coords["y"], coords["width"], coords["height"], margin_pct=0.15)
+        score = reader.predict_score(roi)
+        results.append({"question": i+1, "score": score})
+        
+        cv2.rectangle(annotated, (coords["x"], coords["y"]), 
+                      (coords["x"] + coords["width"], coords["y"] + coords["height"]), (0, 200, 0), 2)
+        cv2.putText(annotated, str(score), (coords["x"] + 5, coords["y"] + 25), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+    # 5. Save and Return
+    result_filename = f"scan_result_{uuid.uuid4()}.jpg"
+    result_path = os.path.join(STATIC_DIR, result_filename)
+    cv2.imwrite(result_path, annotated)
+
+    db_paper = models.ScannedPaper(exam_id=exam_id, student_number=student_id, image_url=f"/static/{result_filename}", status=models.ProcessingStatus.COMPLETED)
     db.add(db_paper); db.commit(); db.refresh(db_paper)
     for res in results:
         db.add(models.Score(scanned_paper_id=db_paper.id, question_number=res["question"], points_awarded=res["score"], confidence_score=1.0))
     db.commit()
-    return {"exam_id": exam_id, "paper_id": db_paper.id, "student_id": student_id, "scores": results}
+    
+    return {
+        "exam_id": exam_id, 
+        "paper_id": db_paper.id, 
+        "student_id": student_id, 
+        "scores": results,
+        "annotated_image_url": f"/static/{result_filename}"
+    }
 
 @app.post("/predict")
 async def predict_handwriting(file: UploadFile = File(...)):
     """Predicts score from a single snippet using ReaderEngine (ONNX)."""
     image = await process_upload_to_image(file)
     if image is None: raise HTTPException(status_code=400, detail="Invalid image or PDF file")
-    score = reader.predict_digit(image)
+    score = reader.predict_score(image)
     return {"score": score}
 
 @app.get("/api/predict/status")
 async def predict_status():
     return {"status": "running", "engine": "onnxruntime"}
+
+# Mount static files to serve the annotated images
+from fastapi.staticfiles import StaticFiles
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

@@ -7,7 +7,7 @@
     <style>
         :root { --primary: #2563eb; --success: #16a34a; --bg: #f8fafc; --text: #1e293b; }
         body { font-family: 'Inter', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background-color: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 100%; max-width: 600px; margin-bottom: 24px; border: 1px solid #e2e8f0; }
+        .container { background-color: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 100%; max-width: 650px; margin-bottom: 24px; border: 1px solid #e2e8f0; }
         h1 { font-size: 1.5rem; margin: 0 0 20px 0; display: flex; align-items: center; gap: 10px; }
         h2 { font-size: 1.1rem; margin: 0 0 16px 0; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
         .form-group { margin-bottom: 16px; }
@@ -30,6 +30,8 @@
         .score-val { font-size: 1.2rem; font-weight: bold; color: var(--primary); }
         .score-label { font-size: 0.7rem; color: #94a3b8; }
         .admin-link { text-decoration: none; color: var(--primary); font-size: 0.9rem; font-weight: 500; margin-bottom: 20px; }
+        
+        .annotated-preview { width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid #dbeafe; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
 </head>
 <body>
@@ -69,10 +71,10 @@
         </div>
     </div>
 
-    <!-- SECTION 2: FULL PAPER SCANNER (Automatic QR Detection) -->
+    <!-- SECTION 2: FULL PAPER SCANNER -->
     <div class="container">
         <h1>🔍 2. AI Scanner (Full Paper)</h1>
-        <p style="font-size: 0.85rem; color: #64748b; margin-top: -15px; margin-bottom: 20px;">AI will automatically detect the Exam ID from the QR code on the paper.</p>
+        <p style="font-size: 0.85rem; color: #64748b; margin-top: -15px; margin-bottom: 20px;">AI will automatically detect the Exam ID from the QR code.</p>
         <form id="scanForm">
             <div class="form-group">
                 <label>Upload Scanned Sheet (PDF or Image)</label>
@@ -90,22 +92,25 @@
                 <span style="font-weight: 600;">Student ID: <span id="resStudentId" style="color: var(--primary);"></span></span>
                 <span style="font-size: 0.8rem; color: #64748b;">Status: <span style="color:var(--success); font-weight: 600;">Success</span></span>
             </div>
+            
             <div class="score-grid" id="resScoreGrid"></div>
+
+            <div style="margin-top: 20px; font-weight: 600; font-size: 0.9rem; color: #64748b;">VISUAL DETECTION MAP:</div>
+            <img id="resAnnotatedImg" class="annotated-preview" src="" alt="Annotated Detection Map">
         </div>
     </div>
 
     <!-- SECTION 3: SNIPPET PREDICTOR -->
-    <div class="container">
+    <div class="container" style="max-width: 400px;">
         <h1>🎯 3. Snippet Predictor</h1>
         <form id="predictForm">
             <div class="form-group">
-                <label>Upload Snippet (Image or PDF)</label>
+                <label>Upload Snippet</label>
                 <input type="file" id="predict_file" accept=".pdf,image/*" required>
             </div>
             <button type="submit" id="predictBtn" class="btn-outline">Predict Score</button>
         </form>
         <div id="predictResult" class="result-box" style="background: #f8fafc; border-style: dashed; text-align: center;">
-            <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 4px;">PREDICTED VALUE</div>
             <div id="predictVal" style="font-size: 2.5rem; font-weight: 800; color: var(--text);"></div>
         </div>
     </div>
@@ -158,6 +163,8 @@
                 const data = await res.json();
                 document.getElementById('resExamId').textContent = data.exam_id;
                 document.getElementById('resStudentId').textContent = data.student_id;
+                document.getElementById('resAnnotatedImg').src = data.annotated_image_url + "?t=" + new Date().getTime();
+                
                 const grid = document.getElementById('resScoreGrid');
                 grid.innerHTML = data.scores.map(s => `
                     <div class="score-card">
