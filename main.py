@@ -674,6 +674,7 @@ async def get_exam_results(exam_id: str, db: Session = Depends(get_db)):
         students_list.append({
             "student_number": p.student_number or "Unknown",
             "name": p.student.name if p.student else None,
+            "email": p.student.email if p.student else None,
             "total_score": student_total,
             "total_max": total_max,
             "percentage": round((student_total / total_max * 100), 1) if total_max > 0 else 0,
