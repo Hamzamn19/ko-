@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pdf
+hackathon.db
+static/scan_result_*.jpg
+db/

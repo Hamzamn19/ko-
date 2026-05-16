@@ -17,6 +17,29 @@ from PIL import Image
 import numpy as np
 import cv2
 import fitz  # PyMuPDF
+import arabic_reshaper
+from bidi.algorithm import get_display
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# Register Unicode Font (DejaVuSans supports Arabic/Turkish)
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_BOLD_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+try:
+    pdfmetrics.registerFont(TTFont('DejaVuSans', FONT_PATH))
+    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', FONT_BOLD_PATH))
+    DEFAULT_FONT = "DejaVuSans"
+    DEFAULT_FONT_BOLD = "DejaVuSans-Bold"
+except:
+    DEFAULT_FONT = "Helvetica"
+    DEFAULT_FONT_BOLD = "Helvetica-Bold"
+
+def shape_text(text: str) -> str:
+    """Shapes Arabic text and applies BiDi algorithm."""
+    if not text: return ""
+    reshaped_text = arabic_reshaper.reshape(text)
+    return get_display(reshaped_text)
 
 # --- READER ENGINE ---
 from reader_engine import ReaderEngine
@@ -40,7 +63,7 @@ if not os.path.exists(STATIC_DIR):
 
 # A4 dimensions in points (1 mm ~ 2.83465 points)
 A4_WIDTH, A4_HEIGHT = A4
-MARGIN = 20 * mm
+MARGIN = 30
 
 class QuestionInput(BaseModel):
     topic: str = "General"
@@ -201,17 +224,19 @@ def calculate_layout_json(metadata: ExamMetadata, exam_id: str) -> dict:
     LEFT_WIDTH = full_w * 0.60
     RIGHT_WIDTH = full_w * 0.40
     
-    start_y = A4_HEIGHT - MARGIN
+    start_y = A4_HEIGHT - 70
+    header_height = 197
     
     # 1. QR Code
-    qr_size = 70
-    qr_x = MARGIN + (LEFT_WIDTH * 0.50) + (LEFT_WIDTH * 0.50 - qr_size) / 2
-    qr_y_bottom = start_y - 75 + (75 - qr_size) / 2
+    qr_size = 72
+    qr_col_w = LEFT_WIDTH * 0.50
+    qr_x = MARGIN + qr_col_w + (qr_col_w - qr_size) / 2
+    row1_h = 75
+    qr_y_bottom = start_y - row1_h + (row1_h - qr_size) / 2
     qr_y_top = A4_HEIGHT - (qr_y_bottom + qr_size)
     layout["qr"] = [round(qr_x), round(qr_y_top), round(qr_size), round(qr_size)]
     
     # 2. Student ID Box
-    header_height = 180
     sid_x = MARGIN + LEFT_WIDTH
     sid_y_bottom = start_y - header_height
     sid_y_top = A4_HEIGHT - (sid_y_bottom + header_height)
@@ -246,16 +271,24 @@ def calculate_layout_json(metadata: ExamMetadata, exam_id: str) -> dict:
 def draw_student_id_section(c, x, y, width, height):
     c.saveState()
     c.setStrokeColor(colors.black); c.setLineWidth(1)
-    c.rect(x, y - height, width, height, stroke=1, fill=0)
+    # The outer rectangle is already drawn by the caller (draw_tabular_header_with_qr)
+    
     c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(x + width/2, y - 12, "STUDENT ID / OGRENCI NO")
+    c.drawCentredString(x + width/2, y - 12, "STUDENT ID")
+    
     cols, box_w, box_h, gap = 10, 12, 14, 3
     total_cols_w = cols * box_w + (cols - 1) * gap
     start_x = x + (width - total_cols_w) / 2
+    
+    # top_y is where the "box" row starts. 
+    # Total content height is roughly 12 (title) + 20 (gap) + 14 (boxes) + 2 (gap) + 135 (OMR) = 183
+    # With 197 height, we have some breathing room.
     top_y = y - 32
+    
     c.setLineWidth(0.7)
     for i in range(cols):
         c.rect(start_x + i * (box_w + gap), top_y, box_w, box_h, stroke=1, fill=0)
+        
     omr_box_size, row_spacing = 9, 13.5
     omr_start_y = top_y - 2
     for i in range(cols):
@@ -263,59 +296,92 @@ def draw_student_id_section(c, x, y, width, height):
         for j in range(10):
             cur_y = omr_start_y - (j + 1) * row_spacing
             c.setLineWidth(0.5); c.rect(cur_x, cur_y, omr_box_size, omr_box_size, stroke=1, fill=0)
-            # Placeholder numbers removed to prevent false positives in OMR detection
-            # c.setFillColor(colors.lightgrey); c.setFont("Helvetica", 6); c.drawCentredString(cur_x + omr_box_size/2, cur_y + 2, str(j))
     c.restoreState()
 
 def draw_tabular_header_with_qr(c, start_x, start_y, width, info_dict, qr_img_buffer):
     full_w = width - (2 * MARGIN)
-    LEFT_WIDTH, RIGHT_WIDTH = full_w * 0.60, full_w * 0.40
-    header_height = 180
-    # Logo drawing section with optimization
-    logo_path = "Gemini_Generated_Image_4xrcth4xrcth4xrc.png"
-    logo_box_w = LEFT_WIDTH * 0.50
-    logo_box_h = 75
-    c.rect(start_x, start_y - logo_box_h, logo_box_w, logo_box_h)
+    LEFT_WIDTH = full_w * 0.60
+    RIGHT_WIDTH = full_w * 0.40
+    header_height = 197
     
-    from reportlab.lib.utils import ImageReader
+    # Master Rects
+    c.setStrokeColor(colors.black); c.setLineWidth(1)
+    c.rect(MARGIN, start_y - header_height, full_w, header_height) # Entire Header
+    c.rect(MARGIN, start_y - header_height, LEFT_WIDTH, header_height) # Left Section
+    
+    curr_y = start_y
+    
+    # ROW 1: Logo & QR (75 pt)
+    row_h = 75
+    logo_w = LEFT_WIDTH * 0.50
+    c.rect(MARGIN, curr_y - row_h, logo_w, row_h)
+    logo_path = "Gemini_Generated_Image_4xrcth4xrcth4xrc.png"
     if os.path.exists(logo_path):
         try:
-            # OPTIMIZATION: Resize and compress image to keep PDF small
+            from reportlab.lib.utils import ImageReader
             img = Image.open(logo_path)
             img.thumbnail((400, 400), Image.Resampling.LANCZOS)
-            
-            # Save to buffer as JPEG with 85% quality
             logo_buf = io.BytesIO()
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
             img.save(logo_buf, format="JPEG", quality=85, optimize=True)
             logo_buf.seek(0)
-            
-            c.drawImage(ImageReader(logo_buf), start_x + 5, start_y - logo_box_h + 5, 
-                        width=logo_box_w - 10, height=logo_box_h - 10, 
-                        preserveAspectRatio=True, mask='auto', anchor='c')
-        except Exception as e:
-            print(f"Logo processing failed: {e}")
-            c.setFont("Helvetica-Bold", 10)
-            c.drawCentredString(start_x + (logo_box_w / 2), start_y - 40, "LOGO ERROR")
-    else:
-        c.setFont("Helvetica-Bold", 10)
-        c.drawCentredString(start_x + (logo_box_w / 2), start_y - 40, "LOGO NOT FOUND")
-    qr_size = 70; qr_x = start_x + (LEFT_WIDTH * 0.50) + (LEFT_WIDTH * 0.50 - qr_size) / 2
-    qr_y = start_y - 75 + (75 - qr_size) / 2
-    c.rect(start_x + (LEFT_WIDTH * 0.50), start_y - 75, LEFT_WIDTH * 0.50, 75)
+            c.drawImage(ImageReader(logo_buf), MARGIN + 5, curr_y - row_h + 5, 
+                        width=logo_w - 10, height=row_h - 10, preserveAspectRatio=True, mask='auto', anchor='c')
+        except: pass
+        
+    qr_w = LEFT_WIDTH * 0.50
+    c.rect(MARGIN + logo_w, curr_y - row_h, qr_w, row_h)
+    qr_size = 72
+    qr_x = MARGIN + logo_w + (qr_w - qr_size) / 2
+    qr_y = curr_y - row_h + (row_h - qr_size) / 2
     from reportlab.lib.utils import ImageReader
     c.drawImage(ImageReader(qr_img_buffer), qr_x, qr_y, width=qr_size, height=qr_size)
-    row_h = 35; curr_y = start_y - 75
-    for label, key in [("Course", "course_code"), ("Instructor", "instructor_name"), ("Date", None)]:
-        c.rect(start_x, curr_y - row_h, LEFT_WIDTH, row_h)
-        c.setFont("Helvetica-Bold", 7); c.drawString(start_x + 3, curr_y - 20, label)
-        if key:
-            c.setFont("Helvetica", 7); val = info_dict.get(key, '').upper()
-            if key == "course_code": val += f" - {info_dict.get('course_name', '').upper()}"
-            c.drawString(start_x + 60, curr_y - 20, val)
+    curr_y -= row_h
+    
+    # ROW 2: Exam Type (22 pt)
+    row_h = 22
+    c.rect(MARGIN, curr_y - row_h, LEFT_WIDTH, row_h)
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(MARGIN + LEFT_WIDTH/2, curr_y - 14, "MIDTERM EXAM")
+    curr_y -= row_h
+    
+    # ROWS 3-7: Info Rows (20 pt each)
+    row_h = 20
+    sig_w = 112.40
+    label_w = 63.26
+    info_w = LEFT_WIDTH - sig_w - label_w
+    
+    rows = [
+        ("DEPARTMENT", info_dict.get("course_code", "").upper()),
+        ("COURSE", info_dict.get("course_name", "").upper()),
+        ("DATE", ""),
+        ("PERCENTAGE", ""),
+        ("NAME & SURNAME", "")
+    ]
+    
+    for i, (label, val) in enumerate(rows):
+        is_sig_row = (i == 2 or i == 3) # Row 3 (Date) and Row 4 (Percent)
+        current_row_y = curr_y - row_h
+        
+        # Label Box
+        c.rect(MARGIN, current_row_y, label_w, row_h)
+        c.setFont("Helvetica-Bold", 6)
+        c.drawString(MARGIN + 3, current_row_y + 7, label)
+        
+        v_rect_w = LEFT_WIDTH - label_w
+        if is_sig_row:
+            v_rect_w = info_w
+            if i == 2: # Draw Signature box spanning two rows (3 & 4)
+                c.rect(MARGIN + label_w + info_w, current_row_y - row_h, sig_w, row_h * 2)
+                # Text "SIGNATURE" removed as requested to be transparent
+        
+        # Value Box
+        c.rect(MARGIN + label_w, current_row_y, v_rect_w, row_h)
+        c.setFont("Helvetica", 7)
+        c.drawString(MARGIN + label_w + 5, current_row_y + 7, val)
         curr_y -= row_h
-    draw_student_id_section(c, start_x + LEFT_WIDTH, start_y, RIGHT_WIDTH, header_height)
+        
+    draw_student_id_section(c, MARGIN + LEFT_WIDTH, start_y, RIGHT_WIDTH, header_height)
     return start_y - header_height
 
 def draw_question_box(c, x, y, w, h, q_num, max_points):

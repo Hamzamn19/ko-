@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     libgl1 \
     libglib2.0-0 \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
