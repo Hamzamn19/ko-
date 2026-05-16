@@ -309,6 +309,13 @@ def draw_student_id_section(c, x, y, width, height):
         for j in range(10):
             cur_y = omr_start_y - (j + 1) * row_spacing
             c.setLineWidth(0.5); c.rect(cur_x, cur_y, omr_box_size, omr_box_size, stroke=1, fill=0)
+            
+            # Draw very light digit inside the box
+            c.saveState()
+            c.setFillColorRGB(0.85, 0.85, 0.85) # Very light grey
+            c.setFont("Helvetica", 5) # Smaller font to fit well
+            c.drawCentredString(cur_x + omr_box_size/2, cur_y + 2.5, str(j))
+            c.restoreState()
     c.restoreState()
 
 def draw_tabular_header_with_qr(c, start_x, start_y, width, info_dict, qr_img_buffer):
