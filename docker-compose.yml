@@ -7,6 +7,7 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - PUQ_AI_KEY=${PUQ_AI_KEY}
     volumes:
       - db_data:/app/db
 

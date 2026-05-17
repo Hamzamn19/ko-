@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
-    <link href="/static/dashboard-ui.css?v=20260516j" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260516k" rel="stylesheet" />
     <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
     <script>
         tailwind.config = {
@@ -64,9 +64,18 @@
                     <span class="material-symbols-outlined">groups</span>
                     <span>Students 360</span>
                 </a>
+                <a class="nav-link" href="/report">
+                    <span class="material-symbols-outlined">psychology</span>
+                    <span>AI Reports</span>
+                </a>
             </nav>
 
             <div class="nav-footer">
+                <button id="fx-toggle" class="nav-link" type="button" style="width:100%;cursor:pointer;background:none;margin-bottom:0.5rem;">
+                    <span class="material-symbols-outlined">auto_awesome</span>
+                    <span>Background FX</span>
+                    <span id="fx-status" class="pill" style="margin-left:auto;font-size:0.58rem;">ON</span>
+                </button>
                 <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">Operations Feed</p>
                 <p class="mt-1 text-sm font-bold">Realtime exam, scan, and student telemetry.</p>
             </div>
@@ -144,7 +153,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/static/Aurora.js?v=20260516e"></script>
-    <script src="/static/dashboard-ui.js?v=20260516i"></script>
+    <script src="/static/dashboard-ui.js?v=20260516j"></script>
     <script>
         async function fetchData() {
             try {

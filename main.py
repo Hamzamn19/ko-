@@ -3,7 +3,7 @@ import uuid
 import base64
 import os
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.responses import HTMLResponse
@@ -69,6 +69,7 @@ MARGIN = 30
 class QuestionInput(BaseModel):
     topic: str = "General"
     max_points: int = 10
+    string_tag: str = ""  # Kısa konu etiketi: "Kirchoff Rule", "Nested Loops"
 
 class ExamMetadata(BaseModel):
     course_code: str = Field(..., example="PHY6202")
@@ -143,43 +144,61 @@ async def create_student(student: StudentInput, db: Session = Depends(get_db)):
 
 @app.get("/api/students")
 async def list_students(db: Session = Depends(get_db)):
-    students = db.query(models.Student).all()
+    from sqlalchemy import func
+    
+    query = db.query(
+        models.Student,
+        func.count(models.ScannedPaper.id.distinct()).label('exam_count'),
+        func.sum(models.Score.points_awarded).label('total_score')
+    ).outerjoin(
+        models.ScannedPaper, models.Student.student_number == models.ScannedPaper.student_number
+    ).outerjoin(
+        models.Score, models.ScannedPaper.id == models.Score.scanned_paper_id
+    ).group_by(
+        models.Student.student_number
+    ).all()
+
     res = []
-    for s in students:
-        # Calculate overall avg
-        papers = db.query(models.ScannedPaper).filter(models.ScannedPaper.student_number == s.student_number).all()
-        total_score = sum([sum([score.points_awarded or 0 for score in p.scores]) for p in papers])
+    for student, exam_count, total_score in query:
         res.append({
-            "student_number": s.student_number,
-            "name": s.name,
-            "email": s.email,
-            "exam_count": len(papers),
-            "total_score": total_score
+            "student_number": student.student_number,
+            "name": student.name,
+            "email": student.email,
+            "exam_count": exam_count,
+            "total_score": int(total_score) if total_score is not None else 0
         })
     return res
 
 @app.get("/api/students/{student_number}")
 async def get_student_details(student_number: str, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
     student = db.query(models.Student).filter(models.Student.student_number == student_number).first()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
     
-    papers = db.query(models.ScannedPaper).filter(models.ScannedPaper.student_number == student_number).all()
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.exam)
+    ).filter(models.ScannedPaper.student_number == student_number).all()
+    
+    # Batch-load all relevant questions in one query
+    exam_ids = list(set(p.exam_id for p in papers))
+    all_questions = {}
+    if exam_ids:
+        questions = db.query(models.Question).filter(models.Question.exam_id.in_(exam_ids)).all()
+        for q in questions:
+            all_questions[(q.exam_id, q.question_number)] = q
+    
     history = []
     topic_performance = {}
     
     for p in papers:
-        exam = db.query(models.Exam).filter(models.Exam.id == p.exam_id).first()
         total_points = 0
         for score in p.scores:
             pts = score.points_awarded or 0
             total_points += pts
             
-            # Find topic
-            q = db.query(models.Question).filter(
-                models.Question.exam_id == p.exam_id, 
-                models.Question.question_number == score.question_number
-            ).first()
+            q = all_questions.get((p.exam_id, score.question_number))
             if q and q.topic:
                 if q.topic not in topic_performance:
                     topic_performance[q.topic] = {"earned": 0, "max": 0}
@@ -188,8 +207,8 @@ async def get_student_details(student_number: str, db: Session = Depends(get_db)
                 
         history.append({
             "exam_id": p.exam_id,
-            "course": exam.course_code if exam else "Unknown",
-            "date": p.created_at,
+            "course": p.exam.course_code if p.exam else "Unknown",
+            "date": str(p.created_at) if p.created_at else None,
             "score": total_points
         })
         
@@ -432,7 +451,8 @@ async def generate_cover_endpoint(metadata: ExamMetadata, db: Session = Depends(
         curr_x, curr_y = MARGIN, header_y - 10*mm
         for i in range(metadata.question_count):
             if curr_x + box_w > A4_WIDTH - MARGIN + 1: curr_x, curr_y = MARGIN, curr_y - (box_h + 10*mm)
-            draw_question_box(c, curr_x, curr_y, box_w, box_h, i+1, 10)
+            q_max = metadata.questions_data[i].max_points if i < len(metadata.questions_data) else 10
+            draw_question_box(c, curr_x, curr_y, box_w, box_h, i+1, q_max)
             curr_x += box_w + spacing
             
         c.showPage(); c.save(); buffer.seek(0)
@@ -443,10 +463,12 @@ async def generate_cover_endpoint(metadata: ExamMetadata, db: Session = Depends(
         for i in range(metadata.question_count):
             topic = "General"
             max_p = 10
+            string_tag = ""
             if i < len(metadata.questions_data):
                 topic = metadata.questions_data[i].topic
                 max_p = metadata.questions_data[i].max_points
-            db_question = models.Question(exam_id=exam_id, question_number=i+1, topic=topic, max_points=max_p)
+                string_tag = metadata.questions_data[i].string_tag
+            db_question = models.Question(exam_id=exam_id, question_number=i+1, topic=topic, max_points=max_p, string_tag=string_tag)
             db.add(db_question)
         db.commit()
         
@@ -590,6 +612,10 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
     result_path = os.path.join(STATIC_DIR, result_filename)
     cv2.imwrite(result_path, annotated)
 
+    # Also encode as base64 for reliable frontend display
+    _, img_encoded = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    annotated_b64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
+
     db_paper = models.ScannedPaper(exam_id=exam_id, student_number=student_id, image_url=f"/static/{result_filename}", status=models.ProcessingStatus.COMPLETED)
     db.add(db_paper); db.commit(); db.refresh(db_paper)
     for res in results:
@@ -601,8 +627,182 @@ async def scan_paper(file: UploadFile = File(...), db: Session = Depends(get_db)
         "paper_id": db_paper.id, 
         "student_id": student_id, 
         "scores": results,
-        "annotated_image_url": f"/static/{result_filename}"
+        "annotated_image_url": f"/static/{result_filename}",
+        "annotated_image_base64": annotated_b64
     }
+
+# --- SINAV API'LERİ ---
+
+@app.get("/api/exams/{exam_id}/results")
+async def get_exam_results(exam_id: str, db: Session = Depends(get_db)):
+    """Sınava giren tüm öğrencilerin detaylı sonuçları (LLM beslemesi için tasarlanmıştır)."""
+    from sqlalchemy.orm import joinedload
+    
+    db_exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not db_exam:
+        raise HTTPException(status_code=404, detail=f"Exam not found: {exam_id}")
+    
+    # Soruları çek
+    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).order_by(models.Question.question_number).all()
+    questions_list = [
+        {
+            "question_number": q.question_number,
+            "topic": q.topic,
+            "max_points": q.max_points,
+            "string_tag": q.string_tag or ""
+        }
+        for q in questions
+    ]
+    
+    # Question lookup for fast access
+    q_map = {q.question_number: q for q in questions}
+    total_max = sum(q.max_points for q in questions)
+    
+    # Tüm kağıtları ve skorları çek
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.student)
+    ).filter(models.ScannedPaper.exam_id == exam_id).all()
+    
+    students_list = []
+    all_totals = []
+    
+    for p in papers:
+        student_scores = []
+        student_total = 0
+        for score in sorted(p.scores, key=lambda s: s.question_number):
+            pts = score.points_awarded or 0
+            student_total += pts
+            q = q_map.get(score.question_number)
+            student_scores.append({
+                "question_number": score.question_number,
+                "points_awarded": pts,
+                "max_points": q.max_points if q else 10,
+                "string_tag": (q.string_tag or "") if q else "",
+                "topic": (q.topic or "") if q else ""
+            })
+        
+        all_totals.append(student_total)
+        students_list.append({
+            "student_number": p.student_number or "Unknown",
+            "name": p.student.name if p.student else None,
+            "email": p.student.email if p.student else None,
+            "total_score": student_total,
+            "total_max": total_max,
+            "percentage": round((student_total / total_max * 100), 1) if total_max > 0 else 0,
+            "scores": student_scores
+        })
+    
+    # Sınıf istatistikleri
+    class_stats = {}
+    if all_totals:
+        class_stats = {
+            "student_count": len(all_totals),
+            "average_score": round(sum(all_totals) / len(all_totals), 1),
+            "average_percentage": round(sum(all_totals) / len(all_totals) / total_max * 100, 1) if total_max > 0 else 0,
+            "max_score": max(all_totals),
+            "min_score": min(all_totals)
+        }
+    
+    return {
+        "exam_id": db_exam.id,
+        "course_code": db_exam.course_code,
+        "course_name": db_exam.course_name,
+        "instructor_name": db_exam.instructor_name,
+        "question_count": db_exam.question_count,
+        "questions": questions_list,
+        "students": students_list,
+        "class_stats": class_stats
+    }
+
+
+@app.get("/api/students/{student_number}/exam-results")
+async def get_student_exam_results(student_number: str, db: Session = Depends(get_db)):
+    """Öğrencinin girdiği tüm sınavların detaylı sonuçları (soru bazında puan + string_tag)."""
+    from sqlalchemy.orm import joinedload
+    
+    student = db.query(models.Student).filter(models.Student.student_number == student_number).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student not found: {student_number}")
+    
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.exam)
+    ).filter(models.ScannedPaper.student_number == student_number).all()
+    
+    # Batch-load tüm ilgili soruları
+    exam_ids = list(set(p.exam_id for p in papers))
+    q_map = {}
+    if exam_ids:
+        questions = db.query(models.Question).filter(models.Question.exam_id.in_(exam_ids)).all()
+        for q in questions:
+            q_map[(q.exam_id, q.question_number)] = q
+    
+    exams_list = []
+    all_percentages = []
+    string_tag_perf = {}  # string_tag → {earned, max, count}
+    
+    for p in papers:
+        exam_scores = []
+        paper_total = 0
+        paper_max = 0
+        
+        for score in sorted(p.scores, key=lambda s: s.question_number):
+            pts = score.points_awarded or 0
+            q = q_map.get((p.exam_id, score.question_number))
+            max_p = q.max_points if q else 10
+            tag = (q.string_tag or "") if q else ""
+            topic = (q.topic or "") if q else ""
+            
+            paper_total += pts
+            paper_max += max_p
+            
+            exam_scores.append({
+                "question_number": score.question_number,
+                "points_awarded": pts,
+                "max_points": max_p,
+                "string_tag": tag,
+                "topic": topic
+            })
+            
+            # String tag performans takibi
+            if tag:
+                if tag not in string_tag_perf:
+                    string_tag_perf[tag] = {"total_earned": 0, "total_max": 0, "appearances": 0}
+                string_tag_perf[tag]["total_earned"] += pts
+                string_tag_perf[tag]["total_max"] += max_p
+                string_tag_perf[tag]["appearances"] += 1
+        
+        pct = round((paper_total / paper_max * 100), 1) if paper_max > 0 else 0
+        all_percentages.append(pct)
+        
+        exams_list.append({
+            "exam_id": p.exam_id,
+            "course_code": p.exam.course_code if p.exam else "Unknown",
+            "course_name": p.exam.course_name if p.exam else "Unknown",
+            "date": str(p.created_at) if p.created_at else None,
+            "total_score": paper_total,
+            "total_max": paper_max,
+            "percentage": pct,
+            "scores": exam_scores
+        })
+    
+    # String tag performanslarına yüzde ekle
+    for tag, perf in string_tag_perf.items():
+        perf["percentage"] = round((perf["total_earned"] / perf["total_max"] * 100), 1) if perf["total_max"] > 0 else 0
+    
+    return {
+        "student": {
+            "student_number": student.student_number,
+            "name": student.name,
+            "email": student.email
+        },
+        "total_exams": len(exams_list),
+        "overall_average_percentage": round(sum(all_percentages) / len(all_percentages), 1) if all_percentages else 0,
+        "exams": exams_list,
+        "string_tag_performance": string_tag_perf
+    }
+
 
 @app.post("/predict")
 async def predict_handwriting(file: UploadFile = File(...), max_points: int = 100):
@@ -616,6 +816,394 @@ async def predict_handwriting(file: UploadFile = File(...), max_points: int = 10
 async def predict_status():
     return {"status": "running", "engine": reader.hw_recognizer.engine}
 
+# --- AI REPORT ENDPOINTS ---
+
+import httpx
+from datetime import datetime, timezone
+
+PUQ_AI_BASE = "https://api.puq.ai"
+PUQ_AI_KEY = os.environ.get("PUQ_AI_KEY", "")
+
+STUDENT_REPORT_SYSTEM_PROMPT = """Sen bir eğitim analitiği uzmanısın. Sana bir öğrencinin sınav verileri JSON formatında verilecek. Bu verileri analiz ederek iki çıktı üreteceksin:
+
+═══════════════════════════════════════
+BÖLÜM A — PERFORMANS RAPORU
+═══════════════════════════════════════
+
+Aşağıdaki başlıkları içeren Türkçe bir rapor yaz:
+
+1. **Genel Değerlendirme**
+   - Öğrencinin genel akademik durumunu 2-3 cümleyle özetle.
+   - Genel yüzdelik başarı oranını belirt.
+
+2. **Güçlü Yönler**
+   - Öğrencinin en yüksek performans gösterdiği konuları (string_tag bazında) listele.
+   - Yüzde başarı oranlarıyla birlikte belirt.
+
+3. **Zayıf Yönler ve Gelişim Alanları**
+   - Öğrencinin en düşük performans gösterdiği konuları (string_tag bazında) listele.
+   - Her konu için neden zorlandığına dair kısa bir yorum ekle.
+   - Bu konuları "kritik" (<%40), "geliştirilmeli" (%40-%60), "kabul edilebilir" (%60-%75) olarak sınıflandır.
+
+4. **Sınav Bazında Trend Analizi**
+   - Öğrencinin sınavlar arasındaki performans değişimini analiz et.
+   - İyileşme veya kötüleşme trendi var mı belirt.
+
+5. **Öneriler**
+   - Öğrencinin zayıf konularını güçlendirmek için 3-5 somut çalışma önerisi ver.
+
+═══════════════════════════════════════
+BÖLÜM B — TAKVİYE TESTİ (10 SORU)
+═══════════════════════════════════════
+
+Öğrencinin zayıf olduğu konulara (string_tag) odaklanan 10 soruluk çoktan seçmeli bir test hazırla.
+
+Her soru için:
+- Sorunun hangi zayıf konuyu (string_tag) hedeflediğini belirt.
+- 4 seçenek (A, B, C, D) sun.
+- Doğru cevabı belirt.
+- Kısa bir açıklama (1-2 cümle) ekle.
+
+Soruları zorluk derecesine göre kolaydan zora doğru sırala.
+Zayıf konulardaki soru dağılımını, o konudaki başarısızlık oranına göre ağırlıklandır.
+
+═══════════════════════════════════════
+ÇIKTI FORMATI
+═══════════════════════════════════════
+
+Yanıtını KESİNLİKLE aşağıdaki JSON formatında ver, başka hiçbir metin ekleme:
+
+{
+  "report": {
+    "general_assessment": "...",
+    "strong_topics": [
+      {"tag": "...", "percentage": 0.0, "comment": "..."}
+    ],
+    "weak_topics": [
+      {"tag": "...", "percentage": 0.0, "severity": "kritik|geliştirilmeli|kabul edilebilir", "comment": "..."}
+    ],
+    "trend_analysis": "...",
+    "recommendations": ["...", "..."]
+  },
+  "quiz": [
+    {
+      "question_number": 1,
+      "target_tag": "...",
+      "difficulty": "kolay|orta|zor",
+      "question_text": "...",
+      "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
+      "correct_answer": "A|B|C|D",
+      "explanation": "..."
+    }
+  ]
+}"""
+
+CLASS_REPORT_SYSTEM_PROMPT = """Sen bir eğitim analitiği uzmanısın. Sana bir sınava giren tüm öğrencilerin sonuçları JSON formatında verilecek. Bu verileri analiz ederek sınıf geneli bir rapor üreteceksin.
+
+═══════════════════════════════════════
+SINIF GENELİ PERFORMANS RAPORU
+═══════════════════════════════════════
+
+Aşağıdaki başlıkları içeren Türkçe bir rapor yaz:
+
+1. **Genel Değerlendirme**
+   - Sınıfın genel akademik durumunu 2-3 cümleyle özetle.
+   - Ortalama başarı oranını, en yüksek ve en düşük puanları belirt.
+   - Öğrenci sayısını belirt.
+
+2. **Konu Bazlı Sınıf Analizi**
+   - Her string_tag için sınıf ortalamasını hesapla.
+   - En başarılı ve en zayıf konuları sırala.
+
+3. **Başarı Dağılımı**
+   - Öğrencileri başarı gruplarına ayır: Mükemmel (>90%), İyi (75-90%), Orta (50-75%), Zayıf (25-50%), Kritik (<25%).
+   - Her gruptaki öğrenci sayısını belirt.
+
+4. **Risk Altındaki Öğrenciler**
+   - %50 altında kalan öğrencileri listele.
+   - Hangi konularda en çok zorlandıklarını belirt.
+
+5. **Eğitmene Öneriler**
+   - Sınıf genelinde hangi konuların tekrar edilmesi gerektiğini belirt.
+   - 3-5 somut öneri ver.
+
+═══════════════════════════════════════
+ÇIKTI FORMATI
+═══════════════════════════════════════
+
+Yanıtını KESİNLİKLE aşağıdaki JSON formatında ver, başka hiçbir metin ekleme:
+
+{
+  "report": {
+    "general_assessment": "...",
+    "topic_analysis": [
+      {"tag": "...", "class_average_percentage": 0.0, "status": "güçlü|orta|zayıf", "comment": "..."}
+    ],
+    "grade_distribution": {
+      "excellent": {"count": 0, "students": ["..."]},
+      "good": {"count": 0, "students": ["..."]},
+      "average": {"count": 0, "students": ["..."]},
+      "weak": {"count": 0, "students": ["..."]},
+      "critical": {"count": 0, "students": ["..."]}
+    },
+    "at_risk_students": [
+      {"student_number": "...", "name": "...", "percentage": 0.0, "weak_tags": ["..."]}
+    ],
+    "recommendations": ["...", "..."]
+  }
+}"""
+
+
+async def call_puq_ai(system_prompt: str, user_data: dict) -> dict:
+    """Call puq.ai LLM API and return parsed JSON response."""
+    if not PUQ_AI_KEY:
+        raise HTTPException(status_code=500, detail="PUQ_AI_KEY environment variable is not set.")
+    
+    headers = {
+        "Authorization": f"Token {PUQ_AI_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "openai/gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_data, ensure_ascii=False)}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 4096
+    }
+    
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            f"{PUQ_AI_BASE}/v1/chat/completions",
+            headers=headers,
+            json=payload
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM API error ({response.status_code}): {response.text[:300]}"
+            )
+        
+        result = response.json()
+    
+    # Extract content from response
+    try:
+        content = result["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        # Fallback for puq.ai direct format
+        content = result.get("content", "")
+    
+    # Parse JSON from content (strip markdown code fences if present)
+    content = content.strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+    
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail=f"LLM returned invalid JSON. Raw: {content[:500]}")
+
+
+class AIStudentReportRequest(BaseModel):
+    language: str = Field(default="tr", description="Rapor dili")
+    include_quiz: bool = Field(default=True, description="Quiz dahil edilsin mi")
+    quiz_question_count: int = Field(default=10, ge=5, le=20, description="Quiz soru sayısı")
+
+
+class AIClassReportRequest(BaseModel):
+    language: str = Field(default="tr", description="Rapor dili")
+
+
+@app.post("/api/students/{student_number}/ai-report")
+async def generate_student_ai_report(student_number: str, body: Optional[AIStudentReportRequest] = None, db: Session = Depends(get_db)):
+    """Öğrenci özelinde AI raporu + quiz üretir."""
+    from sqlalchemy.orm import joinedload
+    
+    if body is None:
+        body = AIStudentReportRequest()
+    
+    student = db.query(models.Student).filter(models.Student.student_number == student_number).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student not found: {student_number}")
+    
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.exam)
+    ).filter(models.ScannedPaper.student_number == student_number).all()
+    
+    if not papers:
+        raise HTTPException(status_code=404, detail="Bu öğrencinin sınav verisi bulunamadı.")
+    
+    # Batch-load questions
+    exam_ids = list(set(p.exam_id for p in papers))
+    q_map = {}
+    if exam_ids:
+        questions = db.query(models.Question).filter(models.Question.exam_id.in_(exam_ids)).all()
+        for q in questions:
+            q_map[(q.exam_id, q.question_number)] = q
+    
+    exams_list = []
+    all_percentages = []
+    string_tag_perf = {}
+    
+    for p in papers:
+        exam_scores = []
+        paper_total = 0
+        paper_max = 0
+        
+        for score in sorted(p.scores, key=lambda s: s.question_number):
+            pts = score.points_awarded or 0
+            q = q_map.get((p.exam_id, score.question_number))
+            max_p = q.max_points if q else 10
+            tag = (q.string_tag or "") if q else ""
+            topic = (q.topic or "") if q else ""
+            
+            paper_total += pts
+            paper_max += max_p
+            
+            exam_scores.append({
+                "question_number": score.question_number,
+                "points_awarded": pts,
+                "max_points": max_p,
+                "string_tag": tag,
+                "topic": topic
+            })
+            
+            if tag:
+                if tag not in string_tag_perf:
+                    string_tag_perf[tag] = {"total_earned": 0, "total_max": 0, "appearances": 0}
+                string_tag_perf[tag]["total_earned"] += pts
+                string_tag_perf[tag]["total_max"] += max_p
+                string_tag_perf[tag]["appearances"] += 1
+        
+        pct = round((paper_total / paper_max * 100), 1) if paper_max > 0 else 0
+        all_percentages.append(pct)
+        
+        exams_list.append({
+            "exam_id": p.exam_id,
+            "course_code": p.exam.course_code if p.exam else "Unknown",
+            "course_name": p.exam.course_name if p.exam else "Unknown",
+            "date": str(p.created_at) if p.created_at else None,
+            "total_score": paper_total,
+            "total_max": paper_max,
+            "percentage": pct,
+            "scores": exam_scores
+        })
+    
+    for tag, perf in string_tag_perf.items():
+        perf["percentage"] = round((perf["total_earned"] / perf["total_max"] * 100), 1) if perf["total_max"] > 0 else 0
+    
+    llm_input = {
+        "student": {
+            "student_number": student.student_number,
+            "name": student.name,
+            "email": student.email
+        },
+        "overall_average_percentage": round(sum(all_percentages) / len(all_percentages), 1) if all_percentages else 0,
+        "total_exams": len(exams_list),
+        "exams": exams_list,
+        "string_tag_performance": string_tag_perf
+    }
+    
+    parsed = await call_puq_ai(STUDENT_REPORT_SYSTEM_PROMPT, llm_input)
+    
+    return {
+        "student_number": student.student_number,
+        "student_name": student.name,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "report": parsed.get("report", {}),
+        "quiz": parsed.get("quiz", []) if body.include_quiz else None
+    }
+
+
+@app.post("/api/exams/{exam_id}/ai-report")
+async def generate_class_ai_report(exam_id: str, body: Optional[AIClassReportRequest] = None, db: Session = Depends(get_db)):
+    """Sınıf geneli AI raporu üretir (quiz yok)."""
+    from sqlalchemy.orm import joinedload
+    
+    if body is None:
+        body = AIClassReportRequest()
+    
+    db_exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not db_exam:
+        raise HTTPException(status_code=404, detail=f"Exam not found: {exam_id}")
+    
+    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).order_by(models.Question.question_number).all()
+    q_map = {q.question_number: q for q in questions}
+    total_max = sum(q.max_points for q in questions)
+    
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.student)
+    ).filter(models.ScannedPaper.exam_id == exam_id).all()
+    
+    if not papers:
+        raise HTTPException(status_code=404, detail="Bu sınava ait taranmış kağıt bulunamadı.")
+    
+    students_data = []
+    for p in papers:
+        student_scores = []
+        student_total = 0
+        for score in sorted(p.scores, key=lambda s: s.question_number):
+            pts = score.points_awarded or 0
+            student_total += pts
+            q = q_map.get(score.question_number)
+            student_scores.append({
+                "question_number": score.question_number,
+                "points_awarded": pts,
+                "max_points": q.max_points if q else 10,
+                "string_tag": (q.string_tag or "") if q else "",
+                "topic": (q.topic or "") if q else ""
+            })
+        
+        students_data.append({
+            "student_number": p.student_number or "Unknown",
+            "name": p.student.name if p.student else None,
+            "total_score": student_total,
+            "total_max": total_max,
+            "percentage": round((student_total / total_max * 100), 1) if total_max > 0 else 0,
+            "scores": student_scores
+        })
+    
+    llm_input = {
+        "exam_id": db_exam.id,
+        "course_code": db_exam.course_code,
+        "course_name": db_exam.course_name,
+        "instructor_name": db_exam.instructor_name,
+        "question_count": db_exam.question_count,
+        "questions": [
+            {"question_number": q.question_number, "topic": q.topic, "max_points": q.max_points, "string_tag": q.string_tag or ""}
+            for q in questions
+        ],
+        "students": students_data
+    }
+    
+    parsed = await call_puq_ai(CLASS_REPORT_SYSTEM_PROMPT, llm_input)
+    
+    return {
+        "exam_id": db_exam.id,
+        "course_code": db_exam.course_code,
+        "course_name": db_exam.course_name,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "report": parsed.get("report", {})
+    }
+
+
+@app.get("/report", response_class=HTMLResponse)
+async def get_report_page():
+    if not os.path.exists("report.html"):
+        raise HTTPException(status_code=404, detail="report.html not found")
+    with open("report.html", "r") as f:
+        return f.read()
+
+
 # Mount static files to serve the annotated images
 from fastapi.staticfiles import StaticFiles
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+

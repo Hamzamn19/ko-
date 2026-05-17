@@ -5,9 +5,9 @@
     --text-secondary: #475569;
     --line-soft: rgba(255, 255, 255, 0.55);
     --line-strong: rgba(255, 255, 255, 0.78);
-    --glass-heavy: rgba(255, 255, 255, 0.24);
-    --glass-mid: rgba(255, 255, 255, 0.4);
-    --glass-light: rgba(255, 255, 255, 0.68);
+    --glass-heavy: rgba(255, 255, 255, 0.72);
+    --glass-mid: rgba(255, 255, 255, 0.78);
+    --glass-light: rgba(255, 255, 255, 0.88);
     --shadow-glass: 0 20px 54px rgba(15, 23, 42, 0.12);
     --shadow-soft: 0 8px 26px rgba(15, 23, 42, 0.1);
     --accent-a: #2563eb;
@@ -26,9 +26,9 @@
     --text-secondary: #9ca3af;
     --line-soft: rgba(255, 255, 255, 0.1);
     --line-strong: rgba(255, 255, 255, 0.18);
-    --glass-heavy: rgba(20, 20, 20, 0.62);
-    --glass-mid: rgba(24, 24, 24, 0.74);
-    --glass-light: rgba(30, 30, 30, 0.84);
+    --glass-heavy: rgba(20, 20, 20, 0.82);
+    --glass-mid: rgba(24, 24, 24, 0.86);
+    --glass-light: rgba(30, 30, 30, 0.92);
     --shadow-glass: 0 24px 70px rgba(0, 0, 0, 0.68);
     --shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.5);
     --accent-a: #4b5563;
@@ -141,13 +141,13 @@ body::after {
     width: 100%;
     height: 100%;
     display: block;
-    opacity: 0.85;
+    opacity: 0.55;
     position: relative;
     z-index: 1;
 }
 
 .dark .aurora-layer canvas {
-    opacity: 0.55;
+    opacity: 0.35;
 }
 
 .dark .aurora-layer {

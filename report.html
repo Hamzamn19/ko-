@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Reports - Apex Assessment Platform</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260517a" rel="stylesheet" />
+    <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        .ai-glow { position: relative; overflow: hidden; }
+        .ai-glow::before {
+            content: ''; position: absolute; inset: -2px;
+            background: conic-gradient(from 0deg, #6366f1, #8b5cf6, #a78bfa, #c084fc, #6366f1);
+            border-radius: inherit; z-index: -1;
+            animation: glowSpin 4s linear infinite;
+            opacity: 0.4;
+        }
+        @keyframes glowSpin { to { transform: rotate(360deg); } }
+
+        .severity-kritik { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.36); color: #ef4444; }
+        .severity-geliştirilmeli { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.36); color: #f59e0b; }
+        .severity-kabul { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.36); color: #22c55e; }
+        .status-güçlü { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.36); color: #22c55e; }
+        .status-orta { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.36); color: #f59e0b; }
+        .status-zayıf { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.36); color: #ef4444; }
+
+        .report-section { animation: fadeUp 0.4s ease both; }
+        .report-section:nth-child(2) { animation-delay: 0.08s; }
+        .report-section:nth-child(3) { animation-delay: 0.16s; }
+        .report-section:nth-child(4) { animation-delay: 0.24s; }
+        .report-section:nth-child(5) { animation-delay: 0.32s; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+
+        .loading-pulse {
+            display: flex; align-items: center; gap: 0.5rem;
+        }
+        .loading-pulse .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--accent-a); animation: pulse 1.2s ease infinite;
+        }
+        .loading-pulse .dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-pulse .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse { 0%,100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }
+
+        .grade-bar { display: flex; gap: 2px; border-radius: 8px; overflow: hidden; height: 28px; }
+        .grade-bar > div { display: grid; place-items: center; font-size: 0.68rem; font-weight: 700; color: #fff; min-width: 20px; transition: flex 0.5s ease; }
+    </style>
+</head>
+<body>
+    <div class="ambient-layer" aria-hidden="true">
+        <div class="aurora-layer" aria-hidden="true"></div>
+        <span class="ambient-orb orb-a"></span>
+        <span class="ambient-orb orb-b"></span>
+        <span class="ambient-orb orb-c"></span>
+    </div>
+
+    <div class="app-shell">
+        <aside id="app-nav" class="nav-panel glass-surface">
+            <div class="brand-box">
+                <div class="brand-badge">
+                    <span class="material-symbols-outlined">workspace_premium</span>
+                </div>
+                <div>
+                    <p class="brand-title">Apex Assessment Platform</p>
+                    <p class="brand-subtitle">Institutional Edition</p>
+                </div>
+            </div>
+
+            <button id="nav-close" class="icon-btn mobile-only" type="button" aria-label="Close navigation">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+
+            <nav class="nav-links">
+                <a class="nav-link" href="/admin">
+                    <span class="material-symbols-outlined">space_dashboard</span>
+                    <span>Dashboard</span>
+                </a>
+                <a class="nav-link" href="/">
+                    <span class="material-symbols-outlined">note_add</span>
+                    <span>Cover Generator</span>
+                </a>
+                <a class="nav-link" href="/scanner">
+                    <span class="material-symbols-outlined">scan</span>
+                    <span>Scanner</span>
+                </a>
+                <a class="nav-link" href="/student-360">
+                    <span class="material-symbols-outlined">groups</span>
+                    <span>Students 360</span>
+                </a>
+                <a class="nav-link" href="/report">
+                    <span class="material-symbols-outlined">psychology</span>
+                    <span>AI Reports</span>
+                </a>
+            </nav>
+
+            <div class="nav-footer">
+                <button id="fx-toggle" class="nav-link" type="button" style="width:100%;cursor:pointer;background:none;margin-bottom:0.5rem;">
+                    <span class="material-symbols-outlined">auto_awesome</span>
+                    <span>Background FX</span>
+                    <span id="fx-status" class="pill" style="margin-left:auto;font-size:0.58rem;">ON</span>
+                </button>
+                <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">AI Intelligence</p>
+                <p class="mt-1 text-sm font-bold">LLM-powered exam analysis and class reports.</p>
+            </div>
+        </aside>
+
+        <section class="workspace">
+            <header class="top-shell glass-surface">
+                <div class="top-actions">
+                    <button id="nav-toggle" class="icon-btn mobile-nav-toggle" type="button" aria-label="Open navigation">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <div class="top-meta">
+                        <span class="page-kicker">Artificial Intelligence</span>
+                        <span class="page-title">Sınıf Raporu — AI Analysis</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <button class="icon-btn" onclick="toggleTheme()" type="button" aria-label="Toggle theme">
+                        <span id="theme-icon" class="material-symbols-outlined">light_mode</span>
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <!-- Exam Selector -->
+                <article class="card glass-soft">
+                    <h2 class="card-title">
+                        <span class="material-symbols-outlined" style="font-size:20px;vertical-align:-3px;margin-right:6px;">science</span>
+                        Sınav Seçimi
+                    </h2>
+                    <p class="card-subtitle">Rapor oluşturmak istediğiniz sınavı seçin.</p>
+
+                    <div class="flex flex-wrap items-end gap-3 mt-4">
+                        <label class="field" style="flex:1;min-width:240px;">
+                            <span class="field-label">Sınav</span>
+                            <select id="examSelect" class="glass-input" style="cursor:pointer;">
+                                <option value="">Sınav yükleniyor…</option>
+                            </select>
+                        </label>
+                        <button id="generateBtn" class="primary-btn h-[44px] px-5 ai-glow" type="button" onclick="generateClassReport()" disabled>
+                            <span class="material-symbols-outlined" style="font-size:18px;">psychology</span>
+                            Rapor Oluştur
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Loading State -->
+                <article id="loadingCard" class="card glass-soft hide">
+                    <div class="flex items-center gap-3 py-6 justify-center">
+                        <div class="loading-pulse">
+                            <div class="dot"></div>
+                            <div class="dot"></div>
+                            <div class="dot"></div>
+                        </div>
+                        <p class="font-semibold text-sm" style="color:var(--text-secondary);">
+                            AI rapor üretiyor… Bu işlem 15-30 saniye sürebilir.
+                        </p>
+                    </div>
+                </article>
+
+                <!-- Report Output -->
+                <div id="reportOutput" class="hide" style="display:none;">
+                    <!-- Filled by JS -->
+                </div>
+
+                <!-- Error State -->
+                <article id="errorCard" class="card glass-soft hide" style="border-color: rgba(239,68,68,0.36);">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined" style="color:#ef4444;">error</span>
+                        <p id="errorMsg" class="font-semibold text-sm" style="color:#ef4444;"></p>
+                    </div>
+                </article>
+            </main>
+        </section>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/static/Aurora.js?v=20260516e"></script>
+    <script src="/static/dashboard-ui.js?v=20260516j"></script>
+    <script>
+        let exams = [];
+
+        async function loadExams() {
+            try {
+                const res = await fetch('/api/exams');
+                exams = await res.json();
+                const select = document.getElementById('examSelect');
+                if (!exams.length) {
+                    select.innerHTML = '<option value="">Henüz sınav yok</option>';
+                    return;
+                }
+                select.innerHTML = '<option value="">— Sınav Seçin —</option>' +
+                    exams.map(e => `<option value="${e.id}">${e.course_code} — ${e.course_name} (${new Date(e.created_at).toLocaleDateString('tr-TR')})</option>`).join('');
+                document.getElementById('generateBtn').disabled = false;
+            } catch (err) {
+                console.error('Failed to load exams:', err);
+            }
+        }
+
+        async function generateClassReport() {
+            const examId = document.getElementById('examSelect').value;
+            if (!examId) { alert('Lütfen bir sınav seçin.'); return; }
+
+            const btn = document.getElementById('generateBtn');
+            const loading = document.getElementById('loadingCard');
+            const output = document.getElementById('reportOutput');
+            const errorCard = document.getElementById('errorCard');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">hourglass_top</span> Üretiliyor…';
+            loading.classList.remove('hide');
+            output.style.display = 'none';
+            errorCard.classList.add('hide');
+
+            try {
+                const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/ai-report`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language: 'tr' })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || `API Error: ${res.status}`);
+                }
+
+                const data = await res.json();
+                renderClassReport(data);
+            } catch (err) {
+                document.getElementById('errorMsg').textContent = err.message;
+                errorCard.classList.remove('hide');
+            } finally {
+                loading.classList.add('hide');
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">psychology</span> Rapor Oluştur';
+            }
+        }
+
+        function renderClassReport(data) {
+            const output = document.getElementById('reportOutput');
+            const r = data.report || {};
+
+            // Grade distribution bar
+            const gd = r.grade_distribution || {};
+            const gdTotal = (gd.excellent?.count||0) + (gd.good?.count||0) + (gd.average?.count||0) + (gd.weak?.count||0) + (gd.critical?.count||0);
+            const barSegments = [
+                { key: 'excellent', label: 'Mükemmel', color: '#22c55e', count: gd.excellent?.count || 0 },
+                { key: 'good', label: 'İyi', color: '#3b82f6', count: gd.good?.count || 0 },
+                { key: 'average', label: 'Orta', color: '#f59e0b', count: gd.average?.count || 0 },
+                { key: 'weak', label: 'Zayıf', color: '#f97316', count: gd.weak?.count || 0 },
+                { key: 'critical', label: 'Kritik', color: '#ef4444', count: gd.critical?.count || 0 },
+            ];
+
+            // Topic analysis cards
+            const topicCards = (r.topic_analysis || []).map(t => {
+                const statusCls = `status-${t.status || 'orta'}`;
+                return `
+                    <div class="card glass-soft">
+                        <div class="flex justify-between items-center mb-2">
+                            <p class="font-semibold text-sm">${t.tag}</p>
+                            <span class="pill ${statusCls}">${t.status}</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" style="width: ${t.class_average_percentage}%;"></div>
+                        </div>
+                        <p class="text-xs mt-2" style="color:var(--text-secondary);">Sınıf ortalaması: %${t.class_average_percentage}</p>
+                        <p class="text-xs mt-1" style="color:var(--text-secondary);">${t.comment || ''}</p>
+                    </div>
+                `;
+            }).join('');
+
+            // At-risk students
+            const riskRows = (r.at_risk_students || []).map(s => `
+                <tr>
+                    <td class="font-mono text-xs">${s.student_number}</td>
+                    <td class="text-sm">${s.name || '-'}</td>
+                    <td class="font-mono font-bold ${s.percentage < 40 ? 'text-red-500' : 'text-amber-500'}">%${s.percentage}</td>
+                    <td class="text-xs">${(s.weak_tags || []).map(t => `<span class="pill severity-kritik" style="margin:2px;font-size:0.58rem;">${t}</span>`).join('')}</td>
+                </tr>
+            `).join('');
+
+            // Recommendations
+            const recsHtml = (r.recommendations || []).map((rec, i) => `
+                <div class="flex gap-3 items-start">
+                    <span class="w-6 h-6 rounded-lg grid place-items-center font-bold text-xs flex-shrink-0" style="background:rgba(99,102,241,0.14);color:#6366f1;">${i + 1}</span>
+                    <p class="text-sm" style="line-height:1.5;">${rec}</p>
+                </div>
+            `).join('');
+
+            output.innerHTML = `
+                <article class="card glass-soft report-section">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="material-symbols-outlined" style="color:#6366f1;">assessment</span>
+                        <h2 class="card-title">Genel Değerlendirme</h2>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="pill" style="background:rgba(99,102,241,0.12);border-color:rgba(99,102,241,0.36);flex-shrink:0;">
+                            ${data.course_code}
+                        </span>
+                    </div>
+                    <p class="text-sm mt-3" style="line-height:1.7;">${r.general_assessment || ''}</p>
+                </article>
+
+                <article class="card glass-soft report-section">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="material-symbols-outlined" style="color:#3b82f6;">topic</span>
+                        <h2 class="card-title">Konu Bazlı Sınıf Analizi</h2>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-3">
+                        ${topicCards}
+                    </div>
+                </article>
+
+                <article class="card glass-soft report-section">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="material-symbols-outlined" style="color:#8b5cf6;">bar_chart</span>
+                        <h2 class="card-title">Başarı Dağılımı</h2>
+                    </div>
+                    <div class="grade-bar mb-3">
+                        ${barSegments.filter(s => s.count > 0).map(s =>
+                            `<div style="flex:${s.count};background:${s.color};">${s.count}</div>`
+                        ).join('')}
+                    </div>
+                    <div class="flex flex-wrap gap-3">
+                        ${barSegments.map(s => `
+                            <div class="flex items-center gap-1.5 text-xs">
+                                <span class="w-2.5 h-2.5 rounded-full" style="background:${s.color};"></span>
+                                <span style="color:var(--text-secondary);">${s.label}: <strong>${s.count}</strong></span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </article>
+
+                ${riskRows ? `
+                <article class="card glass-soft report-section" style="border-color:rgba(239,68,68,0.18);">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="material-symbols-outlined" style="color:#ef4444;">warning</span>
+                        <h2 class="card-title">Risk Altındaki Öğrenciler</h2>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Numara</th>
+                                    <th>İsim</th>
+                                    <th>Başarı</th>
+                                    <th>Zayıf Konular</th>
+                                </tr>
+                            </thead>
+                            <tbody>${riskRows}</tbody>
+                        </table>
+                    </div>
+                </article>
+                ` : ''}
+
+                <article class="card glass-soft report-section">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="material-symbols-outlined" style="color:#22c55e;">lightbulb</span>
+                        <h2 class="card-title">Eğitmene Öneriler</h2>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                        ${recsHtml}
+                    </div>
+                </article>
+
+                <p class="text-xs text-center" style="color:var(--text-secondary);padding:0.5rem 0;">
+                    Rapor ${new Date(data.generated_at).toLocaleString('tr-TR')} tarihinde AI tarafından üretilmiştir.
+                </p>
+            `;
+
+            output.style.display = 'flex';
+            output.style.flexDirection = 'column';
+            output.style.gap = '0.95rem';
+            output.classList.remove('hide');
+        }
+
+        loadExams();
+    </script>
+</body>
+</html>

@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
-    <link href="/static/dashboard-ui.css?v=20260516j" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260516k" rel="stylesheet" />
     <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
     <script>
         tailwind.config = {
@@ -64,9 +64,18 @@
                     <span class="material-symbols-outlined">groups</span>
                     <span>Students 360</span>
                 </a>
+                <a class="nav-link" href="/report">
+                    <span class="material-symbols-outlined">psychology</span>
+                    <span>AI Reports</span>
+                </a>
             </nav>
 
             <div class="nav-footer">
+                <button id="fx-toggle" class="nav-link" type="button" style="width:100%;cursor:pointer;background:none;margin-bottom:0.5rem;">
+                    <span class="material-symbols-outlined">auto_awesome</span>
+                    <span>Background FX</span>
+                    <span id="fx-status" class="pill" style="margin-left:auto;font-size:0.58rem;">ON</span>
+                </button>
                 <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">Recognition Suite</p>
                 <p class="mt-1 text-sm font-bold">Upload, detect, and classify answer sheets instantly.</p>
             </div>
@@ -96,7 +105,7 @@
 
             <main class="main-content">
                 <section class="panel-grid">
-                    <article class="card glass-soft panel-span-8">
+                    <article class="card glass-soft panel-span-12">
                         <h2 class="card-title">Full Paper Scanner</h2>
                         <p class="card-subtitle">Reads exam ID, student ID, and per-question values from uploaded scans.</p>
 
@@ -133,27 +142,6 @@
                             </div>
                         </section>
                     </article>
-
-                    <article class="card glass-soft panel-span-4">
-                        <h2 class="card-title">Single Box Predictor</h2>
-                        <p class="card-subtitle">Predict one isolated score field.</p>
-
-                        <form id="predictForm" class="mt-4 space-y-4">
-                            <label class="field">
-                                <span class="field-label">Snippet Upload</span>
-                                <input id="predict_file" class="glass-input" type="file" accept=".pdf,image/*" required />
-                            </label>
-                            <button id="predictBtn" type="submit" class="ghost-btn w-full h-[44px] justify-center">
-                                <span class="material-symbols-outlined">analytics</span>
-                                Predict
-                            </button>
-                        </form>
-
-                        <div id="predictResult" class="card glass-soft mt-4 hide text-center">
-                            <p class="field-label mb-2">Predicted Value</p>
-                            <p id="predictVal" class="kpi-value"></p>
-                        </div>
-                    </article>
                 </section>
             </main>
         </section>
@@ -161,7 +149,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/static/Aurora.js?v=20260516e"></script>
-    <script src="/static/dashboard-ui.js?v=20260516i"></script>
+    <script src="/static/dashboard-ui.js?v=20260516j"></script>
     <script>
         document.getElementById('scan_file').addEventListener('change', function () {
             const file = this.files && this.files[0];
@@ -180,12 +168,35 @@
 
             try {
                 const res = await fetch('/api/scan-paper', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error('Scan failed');
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error('Scan failed: ' + errText);
+                }
                 const data = await res.json();
+                console.log('[Scanner] API response:', data);
 
                 document.getElementById('resExamId').textContent = data.exam_id;
                 document.getElementById('resStudentId').textContent = data.student_id;
-                document.getElementById('resAnnotatedImg').src = `${data.annotated_image_url}?t=${Date.now()}`;
+
+                const imgEl = document.getElementById('resAnnotatedImg');
+
+                // Try annotated_image_url first, fallback to base64 if provided
+                if (data.annotated_image_base64) {
+                    imgEl.src = 'data:image/jpeg;base64,' + data.annotated_image_base64;
+                } else if (data.annotated_image_url) {
+                    imgEl.src = data.annotated_image_url + '?t=' + Date.now();
+                }
+
+                imgEl.onerror = function() {
+                    console.error('[Scanner] Image failed to load:', imgEl.src);
+                    this.alt = 'Image failed to load. Check /static/ mount.';
+                    this.style.minHeight = '80px';
+                    this.style.background = 'rgba(239,68,68,0.08)';
+                    this.style.display = 'flex';
+                    this.style.alignItems = 'center';
+                    this.style.justifyContent = 'center';
+                };
+
                 document.getElementById('resScoreGrid').innerHTML = data.scores.map((s) => `
                     <div class="score-box glass-soft">
                         <p class="text-[10px] font-bold" style="color: var(--text-secondary);">Q${s.question}</p>
@@ -194,35 +205,14 @@
                 `).join('');
                 document.getElementById('scanResult').classList.remove('hide');
             } catch (err) {
-                alert('Failed');
+                console.error('[Scanner] Error:', err);
+                alert('Scan failed: ' + err.message);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Initialize AI';
             }
         });
 
-        document.getElementById('predictForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('predictBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> Predicting';
-
-            const formData = new FormData();
-            formData.append('file', document.getElementById('predict_file').files[0]);
-
-            try {
-                const res = await fetch('/predict', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error('Predict failed');
-                const data = await res.json();
-                document.getElementById('predictVal').textContent = data.score;
-                document.getElementById('predictResult').classList.remove('hide');
-            } catch (err) {
-                alert('Failed');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-symbols-outlined">analytics</span> Predict';
-            }
-        });
     </script>
 </body>
 </html>

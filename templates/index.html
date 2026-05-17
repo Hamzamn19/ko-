@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
-    <link href="/static/dashboard-ui.css?v=20260516j" rel="stylesheet" />
+    <link href="/static/dashboard-ui.css?v=20260516k" rel="stylesheet" />
     <link href="/static/Aurora.css?v=20260516e" rel="stylesheet" />
     <script>
         tailwind.config = {
@@ -68,9 +68,18 @@
                     <span class="material-symbols-outlined">groups</span>
                     <span>Students 360</span>
                 </a>
+                <a class="nav-link" href="/report">
+                    <span class="material-symbols-outlined">psychology</span>
+                    <span>AI Reports</span>
+                </a>
             </nav>
 
             <div class="nav-footer">
+                <button id="fx-toggle" class="nav-link" type="button" style="width:100%;cursor:pointer;background:none;margin-bottom:0.5rem;">
+                    <span class="material-symbols-outlined">auto_awesome</span>
+                    <span>Background FX</span>
+                    <span id="fx-status" class="pill" style="margin-left:auto;font-size:0.58rem;">ON</span>
+                </button>
                 <p class="text-[11px] uppercase tracking-[0.16em] font-bold" style="color: var(--text-secondary);">System Profile</p>
                 <p class="mt-1 text-sm font-bold">Secure document design and grading workflow.</p>
             </div>
@@ -100,7 +109,7 @@
 
             <main class="main-content">
                 <section class="panel-grid">
-                    <article class="card glass-soft panel-span-6">
+                    <article class="card glass-soft panel-span-12">
                         <h2 class="card-title">Compose New Cover</h2>
                         <p class="card-subtitle">Generate print-ready templates with QR layout registration.</p>
 
@@ -122,6 +131,18 @@
                                 <input id="q_count" class="glass-input font-mono" type="number" min="1" max="20" value="6" required />
                             </label>
 
+                            <!-- Dinamik Soru Detayları Paneli -->
+                            <div id="questionsPanel" style="grid-column: span 12;" class="mt-2">
+                                <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+                                    <span class="material-symbols-outlined" style="font-size:18px;color:var(--accent);">tune</span>
+                                    <span class="text-sm font-bold" style="color:var(--text-primary);">Question Details</span>
+                                    <span class="pill" style="font-size:0.55rem;margin-left:auto;" id="qPanelCount">6 questions</span>
+                                </div>
+                                <div id="questionRows" style="display:flex;flex-direction:column;gap:0.5rem;max-height:340px;overflow-y:auto;padding-right:4px;">
+                                    <!-- JS tarafından doldurulacak -->
+                                </div>
+                            </div>
+
                             <div id="genResult" class="result-banner hide" style="grid-column: span 12;">
                                 <span class="material-symbols-outlined">verified</span>
                                 <div class="text-sm font-semibold">
@@ -138,57 +159,83 @@
                             </div>
                         </form>
                     </article>
-
-                    <article class="card glass-soft panel-span-6">
-                        <h2 class="card-title">Live Paper Snapshot</h2>
-                        <p class="card-subtitle">Visual approximation of generated structure.</p>
-
-                        <div class="preview-paper mt-4">
-                            <div class="flex items-center justify-between border-b border-slate-300 pb-3">
-                                <h3 class="text-sm font-black tracking-wide">GLASS UNIVERSITY</h3>
-                                <span class="material-symbols-outlined">school</span>
-                            </div>
-                            <div class="mt-4 space-y-3 text-[12px] font-semibold">
-                                <div class="rounded-lg border border-slate-300 p-2">
-                                    <p class="text-[10px] uppercase tracking-wider text-slate-500">Course</p>
-                                    <p id="previewCourse">CSCI-404</p>
-                                </div>
-                                <div class="rounded-lg border border-slate-300 p-2">
-                                    <p class="text-[10px] uppercase tracking-wider text-slate-500">Title</p>
-                                    <p id="previewName">Advanced Algorithms Final</p>
-                                </div>
-                                <div class="rounded-lg border border-slate-300 p-2">
-                                    <p class="text-[10px] uppercase tracking-wider text-slate-500">Questions</p>
-                                    <p id="previewCount">6 items</p>
-                                </div>
-                                <div class="rounded-lg border border-slate-300 p-2 flex items-center justify-between">
-                                    <span class="text-[10px] uppercase tracking-wider text-slate-500">Identity Block</span>
-                                    <span class="material-symbols-outlined text-[18px]">qr_code_2</span>
-                                </div>
-                            </div>
-                        </div>
-                    </article>
                 </section>
             </main>
         </section>
     </div>
 
+    <style>
+        .q-row {
+            display: grid;
+            grid-template-columns: 36px 1fr 1fr 80px;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.5rem 0.65rem;
+            border-radius: 10px;
+            background: var(--glass-bg, rgba(255,255,255,0.04));
+            border: 1px solid var(--glass-border, rgba(255,255,255,0.07));
+            transition: border-color 0.2s;
+        }
+        .q-row:hover { border-color: var(--accent, #6366f1); }
+        .q-row .q-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--accent, #6366f1);
+            text-align: center;
+            background: var(--glass-bg, rgba(99,102,241,0.08));
+            border-radius: 6px;
+            padding: 4px 0;
+        }
+        .q-row input {
+            font-size: 0.78rem;
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+            background: var(--glass-bg, rgba(0,0,0,0.15));
+            color: var(--text-primary, #fff);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .q-row input:focus { border-color: var(--accent, #6366f1); }
+        .q-row input::placeholder { color: var(--text-secondary, #888); font-size: 0.72rem; }
+        #questionRows::-webkit-scrollbar { width: 4px; }
+        #questionRows::-webkit-scrollbar-track { background: transparent; }
+        #questionRows::-webkit-scrollbar-thumb { background: var(--glass-border, rgba(255,255,255,0.1)); border-radius: 4px; }
+    </style>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/static/Aurora.js?v=20260516e"></script>
-    <script src="/static/dashboard-ui.js?v=20260516i"></script>
+    <script src="/static/dashboard-ui.js?v=20260516j"></script>
     <script>
         const courseCode = document.getElementById('course_code');
         const courseName = document.getElementById('course_name');
         const qCountInput = document.getElementById('q_count');
+        const questionRows = document.getElementById('questionRows');
+        const qPanelCount = document.getElementById('qPanelCount');
 
-        function syncPreview() {
-            document.getElementById('previewCourse').textContent = courseCode.value || '-';
-            document.getElementById('previewName').textContent = courseName.value || '-';
-            document.getElementById('previewCount').textContent = `${qCountInput.value || 0} items`;
+        function buildQuestionRows(count) {
+            questionRows.innerHTML = '';
+            qPanelCount.textContent = `${count} question${count > 1 ? 's' : ''}`;
+            for (let i = 0; i < count; i++) {
+                const row = document.createElement('div');
+                row.className = 'q-row';
+                row.innerHTML = `
+                    <div class="q-num">Q${i + 1}</div>
+                    <input type="text" name="q_topic_${i}" placeholder="Topic (e.g. Mechanics)" />
+                    <input type="text" name="q_string_${i}" placeholder="String tag (e.g. Kirchoff Rule)" />
+                    <input type="number" name="q_points_${i}" min="1" max="100" value="10" placeholder="Pts" style="text-align:center;" />
+                `;
+                questionRows.appendChild(row);
+            }
         }
 
-        [courseCode, courseName, qCountInput].forEach((el) => el.addEventListener('input', syncPreview));
-        syncPreview();
+        // İlk yüklemede ve değiştiğinde paneli oluştur
+        buildQuestionRows(parseInt(qCountInput.value, 10));
+        qCountInput.addEventListener('input', () => {
+            const v = parseInt(qCountInput.value, 10);
+            if (v >= 1 && v <= 20) buildQuestionRows(v);
+        });
 
         document.getElementById('genForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -196,11 +243,13 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> Processing';
 
-            const qCount = parseInt(document.getElementById('q_count').value, 10);
+            const qCount = parseInt(qCountInput.value, 10);
             const questionsData = [];
-            const sampleTopics = ['Mechanics', 'Thermodynamics', 'Optics', 'Electromagnetism', 'Quantum', 'Relativity'];
-            for (let i = 0; i < qCount; i += 1) {
-                questionsData.push({ topic: sampleTopics[i % sampleTopics.length], max_points: 10 });
+            for (let i = 0; i < qCount; i++) {
+                const topic = document.querySelector(`[name="q_topic_${i}"]`)?.value || 'General';
+                const stringTag = document.querySelector(`[name="q_string_${i}"]`)?.value || '';
+                const maxPts = parseInt(document.querySelector(`[name="q_points_${i}"]`)?.value, 10) || 10;
+                questionsData.push({ topic, max_points: maxPts, string_tag: stringTag });
             }
 
             try {
@@ -208,8 +257,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        course_code: document.getElementById('course_code').value,
-                        course_name: document.getElementById('course_name').value,
+                        course_code: courseCode.value,
+                        course_name: courseName.value,
                         instructor_name: document.getElementById('instructor').value,
                         question_count: qCount,
                         questions_data: questionsData

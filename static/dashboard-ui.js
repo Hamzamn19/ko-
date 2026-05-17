@@ -66,15 +66,22 @@
         });
     }
 
-
+    let auroraController = null;
+    let auroraHost = null;
 
     async function initAuroraBackground() {
         const ambientLayer = document.querySelector('.ambient-layer');
         if (!ambientLayer) return;
-        const host = ambientLayer.querySelector('.aurora-layer');
-        if (!host) return;
+        auroraHost = ambientLayer.querySelector('.aurora-layer');
+        if (!auroraHost) return;
         if (!window.Aurora || typeof window.Aurora.mount !== 'function') {
             console.warn('Aurora module is unavailable. Include /static/Aurora.js before dashboard-ui.js.');
+            return;
+        }
+
+        // Respect saved preference
+        if (localStorage.getItem('bgfx') === 'off') {
+            ambientLayer.style.display = 'none';
             return;
         }
 
@@ -83,7 +90,7 @@
         );
 
         try {
-            const auroraController = await window.Aurora.mount(host, getAuroraThemeProps());
+            auroraController = await window.Aurora.mount(auroraHost, getAuroraThemeProps());
 
             const observer = new MutationObserver(() => {
                 auroraController?.update(getAuroraThemeProps());
@@ -99,14 +106,56 @@
         }
     }
 
+    function syncFxButton() {
+        const status = document.getElementById('fx-status');
+        if (!status) return;
+        const isOff = localStorage.getItem('bgfx') === 'off';
+        status.textContent = isOff ? 'OFF' : 'ON';
+        status.style.background = isOff ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.14)';
+        status.style.borderColor = isOff ? 'rgba(239,68,68,0.36)' : 'rgba(34,197,94,0.36)';
+    }
+
+    async function toggleFx() {
+        const ambientLayer = document.querySelector('.ambient-layer');
+        if (!ambientLayer) return;
+        const isCurrentlyOn = localStorage.getItem('bgfx') !== 'off';
+
+        if (isCurrentlyOn) {
+            // Turn off
+            localStorage.setItem('bgfx', 'off');
+            if (auroraController) { auroraController.destroy(); auroraController = null; }
+            ambientLayer.style.display = 'none';
+        } else {
+            // Turn on
+            localStorage.setItem('bgfx', 'on');
+            ambientLayer.style.display = '';
+            if (!auroraController && auroraHost && window.Aurora) {
+                const getProps = () => document.documentElement.classList.contains('dark') ? AURORA_DARK_PROPS : AURORA_LIGHT_PROPS;
+                try {
+                    auroraController = await window.Aurora.mount(auroraHost, getProps());
+                } catch (e) { console.error('Failed to re-mount FX:', e); }
+            }
+        }
+        syncFxButton();
+    }
+
+    function initFxToggle() {
+        syncFxButton();
+        const btn = document.getElementById('fx-toggle');
+        if (btn) btn.addEventListener('click', toggleFx);
+    }
+
     function init() {
         applyThemeFromStorage();
         initNavPanel();
         initActiveNav();
         initAuroraBackground();
+        initFxToggle();
 
         window.toggleTheme = toggleTheme;
+        window.toggleFx = toggleFx;
     }
 
     document.addEventListener('DOMContentLoaded', init);
 })();
+
