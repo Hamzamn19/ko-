@@ -6,7 +6,7 @@ from typing import List, Tuple, Dict, Any, Optional
 from handwriting_ocr import get_handwriting_score_recognizer
 
 class ReaderEngine:
-    def __init__(self, model_path: str = "mnist_gtx_model.onnx"):
+    def __init__(self, model_path: str = "models/mnist_gtx_model.onnx"):
         self.model_path = model_path
         self.qr_detector = cv2.QRCodeDetector()
         self.hw_recognizer = get_handwriting_score_recognizer()

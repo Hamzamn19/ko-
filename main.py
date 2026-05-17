@@ -44,7 +44,7 @@ def shape_text(text: str) -> str:
 # --- READER ENGINE ---
 from reader_engine import ReaderEngine
 # We officially switch to the integrated ReaderEngine for all tasks
-reader = ReaderEngine(model_path="mnist_gtx_model.onnx")
+reader = ReaderEngine(model_path="models/mnist_gtx_model.onnx")
 
 # --- DATABASE INTEGRATION ---
 from sqlalchemy.orm import Session
@@ -58,6 +58,7 @@ app = FastAPI(title="Exam Cover API")
 
 # Ensure static directory exists
 STATIC_DIR = "static"
+TEMPLATES_DIR = "templates"
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
 
@@ -83,23 +84,26 @@ class ExamCoverResponse(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    if not os.path.exists("index.html"):
+    path = os.path.join(TEMPLATES_DIR, "index.html")
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="index.html not found")
-    with open("index.html", "r") as f:
+    with open(path, "r") as f:
         return f.read()
 
 @app.get("/admin", response_class=HTMLResponse)
 async def get_admin_dashboard():
-    if not os.path.exists("admin.html"):
+    path = os.path.join(TEMPLATES_DIR, "admin.html")
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="admin.html not found")
-    with open("admin.html", "r") as f:
+    with open(path, "r") as f:
         return f.read()
 
 @app.get("/scanner", response_class=HTMLResponse)
 async def get_scanner():
-    if not os.path.exists("scanner.html"):
+    path = os.path.join(TEMPLATES_DIR, "scanner.html")
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="scanner.html not found")
-    with open("scanner.html", "r") as f:
+    with open(path, "r") as f:
         return f.read()
 
 @app.get("/api/exams")
@@ -119,9 +123,10 @@ class StudentInput(BaseModel):
 
 @app.get("/student-360", response_class=HTMLResponse)
 async def get_student_360():
-    if not os.path.exists("student_360.html"):
+    path = os.path.join(TEMPLATES_DIR, "student_360.html")
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="student_360.html not found")
-    with open("student_360.html", "r") as f:
+    with open(path, "r") as f:
         return f.read()
 
 @app.post("/api/students")
