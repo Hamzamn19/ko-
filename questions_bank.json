@@ -1,0 +1,196 @@
+{
+  "General": [
+    {
+      "question_text": "Aşağıdakilerden hangisi bilimsel yöntemin temel adımlarından biri değildir?",
+      "options": {
+        "A": "Gözlem yapma",
+        "B": "Hipotez kurma",
+        "C": "Deney tasarlama",
+        "D": "Sonuçları gizleme"
+      },
+      "correct_answer": "D",
+      "explanation": "Bilimsel yöntem şeffaflık gerektirir; sonuçlar gizlenmez, aksine paylaşılır."
+    },
+    {
+      "question_text": "Eleştirel düşünme sürecinde 'tümdengelim' (deduction) ne anlama gelir?",
+      "options": {
+        "A": "Özel durumlardan genel kurallara ulaşmak",
+        "B": "Genel ilkelerden özel sonuçlar çıkarmak",
+        "C": "Bir fikri kanıt olmadan kabul etmek",
+        "D": "Sadece duygulara dayanarak karar vermek"
+      },
+      "correct_answer": "B",
+      "explanation": "Tümdengelim, genel bir doğrudan yola çıkarak mantıksal bir silsile ile özel bir sonuca ulaşma yöntemidir."
+    }
+  ],
+  "Physics": [
+    {
+      "question_text": "Bir cismin hızı iki katına çıkarılırsa, kinetik enerjisi nasıl değişir?",
+      "options": {
+        "A": "Değişmez",
+        "B": "2 katına çıkar",
+        "C": "4 katına çıkar",
+        "D": "Yarıya iner"
+      },
+      "correct_answer": "C",
+      "explanation": "Kinetik enerji formülü (1/2)mv² olduğundan, hızın karesiyle orantılı olarak 4 kat artar."
+    },
+    {
+      "question_text": "Newton'un 2. Hareket Yasası (F=ma) neyi ifade eder?",
+      "options": {
+        "A": "Etki ve tepki kuvvetleri birbirine eşittir",
+        "B": "Bir cisme uygulanan net kuvvet, kütlesi ile ivmesinin çarpımına eşittir",
+        "C": "Dış bir kuvvet etki etmedikçe cisim durumunu korur",
+        "D": "Enerji yoktan var edilemez"
+      },
+      "correct_answer": "B",
+      "explanation": "F=ma, dinamiğin temel prensibidir ve kuvvet, kütle, ivme arasındaki ilişkiyi açıklar."
+    }
+  ],
+  "Math": [
+    {
+      "question_text": "f(x) = x² fonksiyonunun x=2 noktasındaki türevi nedir?",
+      "options": {
+        "A": "2",
+        "B": "4",
+        "C": "x",
+        "D": "0"
+      },
+      "correct_answer": "B",
+      "explanation": "f'(x) = 2x. x=2 için 2(2) = 4 olur."
+    },
+    {
+      "question_text": "Bir dik üçgende hipotenüsün karesi, dik kenarların kareleri toplamına eşittir. Bu teoremin adı nedir?",
+      "options": {
+        "A": "Öklid Teoremi",
+        "B": "Pisagor Teoremi",
+        "C": "Thales Teoremi",
+        "D": "Pascal Teoremi"
+      },
+      "correct_answer": "B",
+      "explanation": "a² + b² = c² ilişkisi Pisagor Teoremi olarak bilinir."
+    }
+  ],
+  "Python": [
+    {
+      "question_text": "Python'da bir listeye eleman eklemek için hangi metod kullanılır?",
+      "options": {
+        "A": "add()",
+        "B": "push()",
+        "C": "append()",
+        "D": "insert_end()"
+      },
+      "correct_answer": "C",
+      "explanation": "append() metodu listenin sonuna tek bir eleman ekler."
+    },
+    {
+      "question_text": "Hangi Python veri tipi değiştirilemez (immutable) özelliktedir?",
+      "options": {
+        "A": "List",
+        "B": "Dictionary",
+        "C": "Set",
+        "D": "Tuple"
+      },
+      "correct_answer": "D",
+      "explanation": "Tuple'lar oluşturulduktan sonra elemanları değiştirilemez, silinemez veya ekleme yapılamaz."
+    }
+  ],
+  "Databases": [
+    {
+      "question_text": "SQL'de verileri filtrelemek için hangi anahtar kelime kullanılır?",
+      "options": {
+        "A": "WHERE",
+        "B": "FILTER",
+        "C": "GROUP BY",
+        "D": "HAVING"
+      },
+      "correct_answer": "A",
+      "explanation": "WHERE ifadesi, SELECT sorgularında satır bazlı filtreleme yapmak için kullanılır."
+    },
+    {
+      "question_text": "Bir tabloda her satırı benzersiz şekilde tanımlayan sütuna ne denir?",
+      "options": {
+        "A": "Foreign Key",
+        "B": "Unique Index",
+        "C": "Primary Key",
+        "D": "Master Key"
+      },
+      "correct_answer": "C",
+      "explanation": "Primary Key (Birincil Anahtar), tablodaki her kaydı tekil olarak tanımlar."
+    }
+  ],
+  "Algorithms": [
+    {
+      "question_text": "Hangi sıralama algoritması genellikle en iyi 'average-case' zaman karmaşıklığına (O(n log n)) sahiptir?",
+      "options": {
+        "A": "Bubble Sort",
+        "B": "Insertion Sort",
+        "C": "Quick Sort",
+        "D": "Selection Sort"
+      },
+      "correct_answer": "C",
+      "explanation": "Quick Sort ve Merge Sort ortalama durumda O(n log n) karmaşıklıkla çalışır."
+    },
+    {
+      "question_text": "Binary Search (İkili Arama) algoritması için temel şart nedir?",
+      "options": {
+        "A": "Verilerin rastgele dizilmesi",
+        "B": "Verilerin sıralı olması",
+        "C": "Veri setinin çok küçük olması",
+        "D": "Bağlı liste (Linked List) kullanılması"
+      },
+      "correct_answer": "B",
+      "explanation": "Binary Search'ün çalışabilmesi için arama yapılacak dizinin küçükten büyüğe (veya tam tersi) sıralı olması gerekir."
+    }
+  ],
+  "Loops": [
+    {
+      "question_text": "Bir 'while' döngüsü hangi durumda sonsuz döngüye girer?",
+      "options": {
+        "A": "Koşul her zaman 'false' ise",
+        "B": "Koşul her zaman 'true' ise",
+        "C": "Döngü içinde 'break' kullanılırsa",
+        "D": "Döngü değişkeni hiç değişmezse (ancak başlangıçta false ise)"
+      },
+      "correct_answer": "B",
+      "explanation": "While döngüsü koşul true olduğu sürece çalışır. Koşul hiç false olmazsa döngü bitmez."
+    }
+  ],
+  "Data Structures": [
+    {
+      "question_text": "LIFO (Last-In-First-Out) prensibi ile çalışan veri yapısı hangisidir?",
+      "options": {
+        "A": "Queue (Kuyruk)",
+        "B": "Stack (Yığın)",
+        "C": "Linked List",
+        "D": "Hash Table"
+      },
+      "correct_answer": "B",
+      "explanation": "Stack yapısında son giren eleman ilk çıkar (LIFO)."
+    },
+    {
+      "question_text": "FIFO (First-In-First-Out) prensibi hangi veri yapısında kullanılır?",
+      "options": {
+        "A": "Stack",
+        "B": "Queue",
+        "C": "Binary Tree",
+        "D": "Graph"
+      },
+      "correct_answer": "B",
+      "explanation": "Queue (Kuyruk) yapısında ilk giren eleman ilk çıkar (FIFO)."
+    }
+  ],
+  "Networking": [
+    {
+      "question_text": "IP adreslerini alan adlarına (örneğin google.com) dönüştüren sistem hangisidir?",
+      "options": {
+        "A": "HTTP",
+        "B": "DHCP",
+        "C": "DNS",
+        "D": "FTP"
+      },
+      "correct_answer": "C",
+      "explanation": "DNS (Domain Name System), internetin telefon rehberi gibidir; isimleri IP adreslerine çevirir."
+    }
+  ]
+}

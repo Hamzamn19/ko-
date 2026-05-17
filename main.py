@@ -3,10 +3,12 @@ import uuid
 import base64
 import os
 import json
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Body
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -50,6 +52,7 @@ reader = ReaderEngine(model_path="models/mnist_gtx_model.onnx")
 from sqlalchemy.orm import Session
 from database import engine, get_db, Base
 import models
+from report_generator import generate_local_student_report, generate_local_class_report
 
 # Create the database tables automatically on startup
 models.Base.metadata.create_all(bind=engine)
@@ -61,6 +64,18 @@ STATIC_DIR = "static"
 TEMPLATES_DIR = "templates"
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# --- REQUEST MODELS ---
+
+class AIStudentReportRequest(BaseModel):
+    language: str = Field(default="tr", description="Rapor dili")
+    include_quiz: bool = Field(default=True, description="Quiz dahil edilsin mi")
+    quiz_question_count: int = Field(default=10, ge=5, le=20, description="Quiz soru sayısı")
+
+class AIClassReportRequest(BaseModel):
+    language: str = Field(default="tr", description="Rapor dili")
 
 # A4 dimensions in points (1 mm ~ 2.83465 points)
 A4_WIDTH, A4_HEIGHT = A4
@@ -147,7 +162,9 @@ async def list_students(db: Session = Depends(get_db)):
     from sqlalchemy import func
     
     query = db.query(
-        models.Student,
+        models.Student.student_number,
+        models.Student.name,
+        models.Student.email,
         func.count(models.ScannedPaper.id.distinct()).label('exam_count'),
         func.sum(models.Score.points_awarded).label('total_score')
     ).outerjoin(
@@ -155,15 +172,17 @@ async def list_students(db: Session = Depends(get_db)):
     ).outerjoin(
         models.Score, models.ScannedPaper.id == models.Score.scanned_paper_id
     ).group_by(
-        models.Student.student_number
+        models.Student.student_number,
+        models.Student.name,
+        models.Student.email
     ).all()
 
     res = []
-    for student, exam_count, total_score in query:
+    for student_number, name, email, exam_count, total_score in query:
         res.append({
-            "student_number": student.student_number,
-            "name": student.name,
-            "email": student.email,
+            "student_number": student_number,
+            "name": name,
+            "email": email,
             "exam_count": exam_count,
             "total_score": int(total_score) if total_score is not None else 0
         })
@@ -816,213 +835,12 @@ async def predict_handwriting(file: UploadFile = File(...), max_points: int = 10
 async def predict_status():
     return {"status": "running", "engine": reader.hw_recognizer.engine}
 
-# --- AI REPORT ENDPOINTS ---
-
-import httpx
-from datetime import datetime, timezone
-
-PUQ_AI_BASE = "https://api.puq.ai"
-PUQ_AI_KEY = os.environ.get("PUQ_AI_KEY", "")
-
-STUDENT_REPORT_SYSTEM_PROMPT = """Sen bir eğitim analitiği uzmanısın. Sana bir öğrencinin sınav verileri JSON formatında verilecek. Bu verileri analiz ederek iki çıktı üreteceksin:
-
-═══════════════════════════════════════
-BÖLÜM A — PERFORMANS RAPORU
-═══════════════════════════════════════
-
-Aşağıdaki başlıkları içeren Türkçe bir rapor yaz:
-
-1. **Genel Değerlendirme**
-   - Öğrencinin genel akademik durumunu 2-3 cümleyle özetle.
-   - Genel yüzdelik başarı oranını belirt.
-
-2. **Güçlü Yönler**
-   - Öğrencinin en yüksek performans gösterdiği konuları (string_tag bazında) listele.
-   - Yüzde başarı oranlarıyla birlikte belirt.
-
-3. **Zayıf Yönler ve Gelişim Alanları**
-   - Öğrencinin en düşük performans gösterdiği konuları (string_tag bazında) listele.
-   - Her konu için neden zorlandığına dair kısa bir yorum ekle.
-   - Bu konuları "kritik" (<%40), "geliştirilmeli" (%40-%60), "kabul edilebilir" (%60-%75) olarak sınıflandır.
-
-4. **Sınav Bazında Trend Analizi**
-   - Öğrencinin sınavlar arasındaki performans değişimini analiz et.
-   - İyileşme veya kötüleşme trendi var mı belirt.
-
-5. **Öneriler**
-   - Öğrencinin zayıf konularını güçlendirmek için 3-5 somut çalışma önerisi ver.
-
-═══════════════════════════════════════
-BÖLÜM B — TAKVİYE TESTİ (10 SORU)
-═══════════════════════════════════════
-
-Öğrencinin zayıf olduğu konulara (string_tag) odaklanan 10 soruluk çoktan seçmeli bir test hazırla.
-
-Her soru için:
-- Sorunun hangi zayıf konuyu (string_tag) hedeflediğini belirt.
-- 4 seçenek (A, B, C, D) sun.
-- Doğru cevabı belirt.
-- Kısa bir açıklama (1-2 cümle) ekle.
-
-Soruları zorluk derecesine göre kolaydan zora doğru sırala.
-Zayıf konulardaki soru dağılımını, o konudaki başarısızlık oranına göre ağırlıklandır.
-
-═══════════════════════════════════════
-ÇIKTI FORMATI
-═══════════════════════════════════════
-
-Yanıtını KESİNLİKLE aşağıdaki JSON formatında ver, başka hiçbir metin ekleme:
-
-{
-  "report": {
-    "general_assessment": "...",
-    "strong_topics": [
-      {"tag": "...", "percentage": 0.0, "comment": "..."}
-    ],
-    "weak_topics": [
-      {"tag": "...", "percentage": 0.0, "severity": "kritik|geliştirilmeli|kabul edilebilir", "comment": "..."}
-    ],
-    "trend_analysis": "...",
-    "recommendations": ["...", "..."]
-  },
-  "quiz": [
-    {
-      "question_number": 1,
-      "target_tag": "...",
-      "difficulty": "kolay|orta|zor",
-      "question_text": "...",
-      "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
-      "correct_answer": "A|B|C|D",
-      "explanation": "..."
-    }
-  ]
-}"""
-
-CLASS_REPORT_SYSTEM_PROMPT = """Sen bir eğitim analitiği uzmanısın. Sana bir sınava giren tüm öğrencilerin sonuçları JSON formatında verilecek. Bu verileri analiz ederek sınıf geneli bir rapor üreteceksin.
-
-═══════════════════════════════════════
-SINIF GENELİ PERFORMANS RAPORU
-═══════════════════════════════════════
-
-Aşağıdaki başlıkları içeren Türkçe bir rapor yaz:
-
-1. **Genel Değerlendirme**
-   - Sınıfın genel akademik durumunu 2-3 cümleyle özetle.
-   - Ortalama başarı oranını, en yüksek ve en düşük puanları belirt.
-   - Öğrenci sayısını belirt.
-
-2. **Konu Bazlı Sınıf Analizi**
-   - Her string_tag için sınıf ortalamasını hesapla.
-   - En başarılı ve en zayıf konuları sırala.
-
-3. **Başarı Dağılımı**
-   - Öğrencileri başarı gruplarına ayır: Mükemmel (>90%), İyi (75-90%), Orta (50-75%), Zayıf (25-50%), Kritik (<25%).
-   - Her gruptaki öğrenci sayısını belirt.
-
-4. **Risk Altındaki Öğrenciler**
-   - %50 altında kalan öğrencileri listele.
-   - Hangi konularda en çok zorlandıklarını belirt.
-
-5. **Eğitmene Öneriler**
-   - Sınıf genelinde hangi konuların tekrar edilmesi gerektiğini belirt.
-   - 3-5 somut öneri ver.
-
-═══════════════════════════════════════
-ÇIKTI FORMATI
-═══════════════════════════════════════
-
-Yanıtını KESİNLİKLE aşağıdaki JSON formatında ver, başka hiçbir metin ekleme:
-
-{
-  "report": {
-    "general_assessment": "...",
-    "topic_analysis": [
-      {"tag": "...", "class_average_percentage": 0.0, "status": "güçlü|orta|zayıf", "comment": "..."}
-    ],
-    "grade_distribution": {
-      "excellent": {"count": 0, "students": ["..."]},
-      "good": {"count": 0, "students": ["..."]},
-      "average": {"count": 0, "students": ["..."]},
-      "weak": {"count": 0, "students": ["..."]},
-      "critical": {"count": 0, "students": ["..."]}
-    },
-    "at_risk_students": [
-      {"student_number": "...", "name": "...", "percentage": 0.0, "weak_tags": ["..."]}
-    ],
-    "recommendations": ["...", "..."]
-  }
-}"""
-
-
-async def call_puq_ai(system_prompt: str, user_data: dict) -> dict:
-    """Call puq.ai LLM API and return parsed JSON response."""
-    if not PUQ_AI_KEY:
-        raise HTTPException(status_code=500, detail="PUQ_AI_KEY environment variable is not set.")
-    
-    headers = {
-        "Authorization": f"Token {PUQ_AI_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "openai/gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(user_data, ensure_ascii=False)}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 4096
-    }
-    
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            f"{PUQ_AI_BASE}/v1/chat/completions",
-            headers=headers,
-            json=payload
-        )
-        
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"LLM API error ({response.status_code}): {response.text[:300]}"
-            )
-        
-        result = response.json()
-    
-    # Extract content from response
-    try:
-        content = result["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        # Fallback for puq.ai direct format
-        content = result.get("content", "")
-    
-    # Parse JSON from content (strip markdown code fences if present)
-    content = content.strip()
-    if content.startswith("```"):
-        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-    
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail=f"LLM returned invalid JSON. Raw: {content[:500]}")
-
-
-class AIStudentReportRequest(BaseModel):
-    language: str = Field(default="tr", description="Rapor dili")
-    include_quiz: bool = Field(default=True, description="Quiz dahil edilsin mi")
-    quiz_question_count: int = Field(default=10, ge=5, le=20, description="Quiz soru sayısı")
-
-
-class AIClassReportRequest(BaseModel):
-    language: str = Field(default="tr", description="Rapor dili")
-
+# --- LOCAL REPORT GENERATION ENDPOINTS ---
 
 @app.post("/api/students/{student_number}/ai-report")
 async def generate_student_ai_report(student_number: str, body: Optional[AIStudentReportRequest] = None, db: Session = Depends(get_db)):
-    """Öğrenci özelinde AI raporu + quiz üretir."""
+    """Öğrenci özelinde yerel (programatik) rapor + quiz üretir."""
+    print(f"[Report] Generating student report for {student_number}...")
     from sqlalchemy.orm import joinedload
     
     if body is None:
@@ -1111,20 +929,22 @@ async def generate_student_ai_report(student_number: str, body: Optional[AIStude
         "string_tag_performance": string_tag_perf
     }
     
-    parsed = await call_puq_ai(STUDENT_REPORT_SYSTEM_PROMPT, llm_input)
+    result = generate_local_student_report(llm_input, include_quiz=body.include_quiz)
     
     return {
         "student_number": student.student_number,
         "student_name": student.name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "report": parsed.get("report", {}),
-        "quiz": parsed.get("quiz", []) if body.include_quiz else None
+        "report": result.get("report", {}),
+        "quiz": result.get("quiz", []) if body.include_quiz else None,
+        "html_report": result.get("html_report", "")
     }
 
 
 @app.post("/api/exams/{exam_id}/ai-report")
 async def generate_class_ai_report(exam_id: str, body: Optional[AIClassReportRequest] = None, db: Session = Depends(get_db)):
-    """Sınıf geneli AI raporu üretir (quiz yok)."""
+    """Sınıf geneli yerel (programatik) rapor üretir."""
+    print(f"[Report] Generating class report for exam {exam_id}...")
     from sqlalchemy.orm import joinedload
     
     if body is None:
@@ -1184,14 +1004,14 @@ async def generate_class_ai_report(exam_id: str, body: Optional[AIClassReportReq
         "students": students_data
     }
     
-    parsed = await call_puq_ai(CLASS_REPORT_SYSTEM_PROMPT, llm_input)
+    result = generate_local_class_report(llm_input)
     
     return {
         "exam_id": db_exam.id,
         "course_code": db_exam.course_code,
         "course_name": db_exam.course_name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "report": parsed.get("report", {})
+        "report": result.get("report", {})
     }
 
 
@@ -1202,8 +1022,4 @@ async def get_report_page():
     with open("report.html", "r") as f:
         return f.read()
 
-
-# Mount static files to serve the annotated images
-from fastapi.staticfiles import StaticFiles
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
