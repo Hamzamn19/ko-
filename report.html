@@ -158,6 +158,10 @@
                             <span class="material-symbols-outlined" style="font-size:18px;">psychology</span>
                             Rapor Oluştur
                         </button>
+                        <button id="exportBtn" class="ghost-btn h-[44px] px-5" type="button" onclick="exportExamGrades()" disabled>
+                            <span class="material-symbols-outlined" style="font-size:18px;">file_download</span>
+                            Notları Excel'e Aktar
+                        </button>
                     </div>
                 </article>
 
@@ -209,6 +213,7 @@
                 select.innerHTML = '<option value="">— Sınav Seçin —</option>' +
                     exams.map(e => `<option value="${e.id}">${e.course_code} — ${e.course_name} (${new Date(e.created_at).toLocaleDateString('tr-TR')})</option>`).join('');
                 document.getElementById('generateBtn').disabled = false;
+                document.getElementById('exportBtn').disabled = false;
             } catch (err) {
                 console.error('Failed to load exams:', err);
             }
@@ -250,6 +255,38 @@
                 loading.classList.add('hide');
                 btn.disabled = false;
                 btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">psychology</span> Rapor Oluştur';
+            }
+        }
+
+        async function exportExamGrades() {
+            const examId = document.getElementById('examSelect').value;
+            if (!examId) { alert('Lütfen bir sınav seçin.'); return; }
+
+            const btn = document.getElementById('exportBtn');
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">hourglass_top</span> Hazırlanıyor…';
+
+            try {
+                const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/grades-export`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || `API Error: ${res.status}`);
+                }
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `notlar_${examId}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (err) {
+                alert(err.message || 'Excel dışarı aktarma başarısız oldu.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
             }
         }
 

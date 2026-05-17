@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Body
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from reportlab.pdfgen import canvas
@@ -23,6 +23,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from openpyxl import Workbook
 
 # Register Unicode Font (DejaVuSans supports Arabic/Turkish)
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -121,6 +122,57 @@ async def get_scanner():
 @app.get("/api/exams")
 async def list_exams(db: Session = Depends(get_db)):
     return db.query(models.Exam).order_by(models.Exam.created_at.desc()).all()
+
+@app.get("/api/exams/{exam_id}/grades-export")
+async def export_exam_grades(exam_id: str, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
+
+    db_exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not db_exam:
+        raise HTTPException(status_code=404, detail=f"Exam not found: {exam_id}")
+
+    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
+    total_max = sum(q.max_points for q in questions)
+
+    papers = db.query(models.ScannedPaper).options(
+        joinedload(models.ScannedPaper.scores),
+        joinedload(models.ScannedPaper.student)
+    ).filter(models.ScannedPaper.exam_id == exam_id).all()
+
+    if not papers:
+        raise HTTPException(status_code=404, detail="Bu sinava ait taranmis kagit bulunamadi.")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Notlar"
+    ws.append(["Ogrenci Numarasi", "Isim", "Toplam Puan", "Maksimum", "Basari Yuzdesi"])
+
+    for p in papers:
+        student_total = 0
+        for score in p.scores:
+            student_total += score.points_awarded or 0
+        percentage = round((student_total / total_max * 100), 1) if total_max > 0 else 0
+        ws.append([
+            p.student_number or "",
+            p.student.name if p.student else "",
+            student_total,
+            total_max,
+            percentage
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"notlar_{exam_id}.xlsx"
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}"
+    }
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers
+    )
 
 @app.get("/api/papers")
 async def list_papers(db: Session = Depends(get_db)):
