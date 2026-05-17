@@ -4,6 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Students 360 - Apex Assessment Platform</title>
+    <style>
+        .severity-kritik { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.36); color: #ef4444; }
+        .severity-geliştirilmeli { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.36); color: #f59e0b; }
+        .severity-kabul { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.36); color: #22c55e; }
+        .report-fade { animation: fadeUp 0.4s ease both; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+        .quiz-card { transition: all 0.2s ease; cursor: pointer; }
+        .quiz-card:hover { border-color: var(--line-strong); box-shadow: 0 10px 22px rgba(15,23,42,0.08); }
+        .quiz-answer { max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease; padding: 0; }
+        .quiz-answer.show { max-height: 200px; padding: 0.75rem; }
+        .ai-glow-btn { position: relative; overflow: hidden; }
+        .ai-glow-btn::before {
+            content: ''; position: absolute; inset: -2px;
+            background: conic-gradient(from 0deg, #6366f1, #8b5cf6, #a78bfa, #c084fc, #6366f1);
+            border-radius: inherit; z-index: -1; animation: glowSpin 4s linear infinite; opacity: 0.35;
+        }
+        @keyframes glowSpin { to { transform: rotate(360deg); } }
+        .loading-dots { display: flex; gap: 4px; align-items: center; }
+        .loading-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-a); animation: dotPulse 1.2s ease infinite; }
+        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dotPulse { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.2); } }
+    </style>
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
@@ -63,6 +86,10 @@
                 <a class="nav-link" href="/student-360">
                     <span class="material-symbols-outlined">groups</span>
                     <span>Students 360</span>
+                </a>
+                <a class="nav-link" href="/report">
+                    <span class="material-symbols-outlined">psychology</span>
+                    <span>AI Reports</span>
                 </a>
             </nav>
 
@@ -153,8 +180,16 @@
                     </article>
 
                     <article class="card glass-soft panel-span-8">
-                        <h2 class="card-title">Topic Performance</h2>
-                        <p class="card-subtitle">Topic-wise scoring profile.</p>
+                        <div class="flex items-center justify-between mb-1">
+                            <div>
+                                <h2 class="card-title">Topic Performance</h2>
+                                <p class="card-subtitle">Topic-wise scoring profile.</p>
+                            </div>
+                            <button id="aiReportBtn" class="primary-btn h-[40px] px-4 ai-glow-btn" type="button" onclick="requestAIReport()" style="font-size:0.82rem;">
+                                <span class="material-symbols-outlined" style="font-size:17px;">psychology</span>
+                                AI Rapor
+                            </button>
+                        </div>
                         <div id="p_topics" class="grid md:grid-cols-2 gap-3 mt-4"></div>
 
                         <h3 class="card-title mt-6">Exam History</h3>
@@ -171,6 +206,9 @@
                                 <tbody id="p_history"></tbody>
                             </table>
                         </div>
+
+                        <!-- AI Report Section (hidden until generated) -->
+                        <div id="aiReportSection" class="hide mt-6"></div>
                     </article>
                 </section>
             </main>
@@ -311,6 +349,179 @@
         }
 
         window.viewProfile = viewProfile;
+
+        let currentStudentNumber = null;
+
+        // Override viewProfile to track current student
+        const origViewProfile = viewProfile;
+        async function trackedViewProfile(studentNum) {
+            currentStudentNumber = studentNum;
+            document.getElementById('aiReportSection').classList.add('hide');
+            document.getElementById('aiReportSection').innerHTML = '';
+            await origViewProfile(studentNum);
+        }
+        window.viewProfile = trackedViewProfile;
+
+        async function requestAIReport() {
+            if (!currentStudentNumber) return;
+            const btn = document.getElementById('aiReportBtn');
+            const section = document.getElementById('aiReportSection');
+
+            btn.disabled = true;
+            btn.innerHTML = '<div class="loading-dots"><span></span><span></span><span></span></div> Üretiliyor…';
+            section.classList.remove('hide');
+            section.innerHTML = `
+                <div class="flex items-center gap-3 py-4 justify-center">
+                    <div class="loading-dots"><span></span><span></span><span></span></div>
+                    <p class="text-sm font-semibold" style="color:var(--text-secondary);">AI rapor üretiliyor… 15-30 saniye sürebilir.</p>
+                </div>`;
+
+            try {
+                const res = await fetch(`/api/students/${encodeURIComponent(currentStudentNumber)}/ai-report`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ include_quiz: true })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || `Error ${res.status}`);
+                }
+
+                const data = await res.json();
+                renderStudentAIReport(section, data);
+            } catch (err) {
+                section.innerHTML = `
+                    <div class="flex items-center gap-2 p-3 rounded-xl" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);">
+                        <span class="material-symbols-outlined" style="color:#ef4444;">error</span>
+                        <p class="text-sm font-semibold" style="color:#ef4444;">${err.message}</p>
+                    </div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:17px;">psychology</span> AI Rapor';
+            }
+        }
+        window.requestAIReport = requestAIReport;
+
+        function renderStudentAIReport(container, data) {
+            const r = data.report || {};
+            const quiz = data.quiz || [];
+
+            // Strong topics
+            const strongHtml = (r.strong_topics || []).map(t => `
+                <div class="flex items-center gap-2 p-2 rounded-lg" style="background:rgba(34,197,94,0.06);">
+                    <span class="material-symbols-outlined" style="font-size:16px;color:#22c55e;">check_circle</span>
+                    <span class="text-sm font-semibold">${t.tag}</span>
+                    <span class="pill severity-kabul" style="margin-left:auto;font-size:0.58rem;">%${t.percentage}</span>
+                </div>
+            `).join('');
+
+            // Weak topics
+            const weakHtml = (r.weak_topics || []).map(t => {
+                let cls = 'severity-kritik';
+                if (t.severity === 'geliştirilmeli') cls = 'severity-geliştirilmeli';
+                else if (t.severity?.startsWith('kabul')) cls = 'severity-kabul';
+                return `
+                    <div class="card glass-soft">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-semibold text-sm">${t.tag}</span>
+                            <span class="pill ${cls}" style="font-size:0.58rem;">${t.severity} — %${t.percentage}</span>
+                        </div>
+                        <p class="text-xs" style="color:var(--text-secondary);">${t.comment || ''}</p>
+                    </div>`;
+            }).join('');
+
+            // Recommendations
+            const recsHtml = (r.recommendations || []).map((rec, i) => `
+                <div class="flex gap-2 items-start">
+                    <span class="w-5 h-5 rounded-md grid place-items-center font-bold text-xs flex-shrink-0" style="background:rgba(99,102,241,0.14);color:#6366f1;">${i+1}</span>
+                    <p class="text-xs" style="line-height:1.5;">${rec}</p>
+                </div>
+            `).join('');
+
+            // Quiz
+            const quizHtml = quiz.length ? quiz.map(q => {
+                const diffColor = q.difficulty === 'kolay' ? '#22c55e' : q.difficulty === 'orta' ? '#f59e0b' : '#ef4444';
+                const optionsHtml = Object.entries(q.options).map(([key, val]) => {
+                    const isCorrect = key === q.correct_answer;
+                    return `<div class="flex items-start gap-2 p-1.5 rounded-lg text-xs ${isCorrect ? '' : ''}" style="${isCorrect ? 'background:rgba(34,197,94,0.08);' : ''}">
+                        <span class="font-bold flex-shrink-0" style="${isCorrect ? 'color:#22c55e;' : ''}">${key}.</span>
+                        <span>${val}</span>
+                        ${isCorrect ? '<span class="material-symbols-outlined" style="font-size:14px;color:#22c55e;margin-left:auto;">check</span>' : ''}
+                    </div>`;
+                }).join('');
+
+                return `
+                    <div class="quiz-card card glass-soft" onclick="this.querySelector('.quiz-answer').classList.toggle('show')">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="w-6 h-6 rounded-lg grid place-items-center font-bold text-xs" style="background:rgba(99,102,241,0.14);color:#6366f1;">S${q.question_number}</span>
+                            <span class="pill" style="font-size:0.56rem;border-color:${diffColor};color:${diffColor};">${q.difficulty}</span>
+                            <span class="pill" style="font-size:0.56rem;margin-left:auto;">${q.target_tag}</span>
+                        </div>
+                        <p class="text-sm font-semibold mb-2">${q.question_text}</p>
+                        <div class="quiz-answer rounded-lg" style="background:rgba(99,102,241,0.04);">
+                            ${optionsHtml}
+                            <p class="text-xs mt-2" style="color:var(--text-secondary);border-top:1px solid var(--line-soft);padding-top:0.5rem;">
+                                <strong>Açıklama:</strong> ${q.explanation}
+                            </p>
+                        </div>
+                        <p class="text-xs mt-1" style="color:var(--text-secondary);">Cevabı görmek için tıklayın</p>
+                    </div>`;
+            }).join('') : '';
+
+            container.innerHTML = `
+                <div style="border-top:1px solid var(--line-soft);padding-top:1.5rem;">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="material-symbols-outlined" style="color:#6366f1;">psychology</span>
+                        <h2 class="card-title">AI Performans Raporu</h2>
+                        <span class="pill" style="margin-left:auto;font-size:0.56rem;background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.3);">
+                            ${data.student_name}
+                        </span>
+                    </div>
+
+                    <div class="card glass-soft report-fade mb-3">
+                        <h3 class="font-semibold text-sm mb-2">📋 Genel Değerlendirme</h3>
+                        <p class="text-sm" style="line-height:1.7;">${r.general_assessment || ''}</p>
+                    </div>
+
+                    ${strongHtml ? `
+                    <div class="card glass-soft report-fade mb-3">
+                        <h3 class="font-semibold text-sm mb-2">💪 Güçlü Yönler</h3>
+                        <div class="flex flex-col gap-1.5">${strongHtml}</div>
+                    </div>` : ''}
+
+                    ${weakHtml ? `
+                    <div class="report-fade mb-3">
+                        <h3 class="font-semibold text-sm mb-2">📉 Zayıf Yönler</h3>
+                        <div class="grid md:grid-cols-2 gap-2">${weakHtml}</div>
+                    </div>` : ''}
+
+                    ${r.trend_analysis ? `
+                    <div class="card glass-soft report-fade mb-3">
+                        <h3 class="font-semibold text-sm mb-2">📈 Trend Analizi</h3>
+                        <p class="text-sm" style="line-height:1.6;">${r.trend_analysis}</p>
+                    </div>` : ''}
+
+                    ${recsHtml ? `
+                    <div class="card glass-soft report-fade mb-3">
+                        <h3 class="font-semibold text-sm mb-2">💡 Öneriler</h3>
+                        <div class="flex flex-col gap-2">${recsHtml}</div>
+                    </div>` : ''}
+
+                    ${quizHtml ? `
+                    <div class="report-fade">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="material-symbols-outlined" style="color:#8b5cf6;">quiz</span>
+                            <h3 class="font-semibold text-sm">Takviye Testi (${quiz.length} Soru)</h3>
+                        </div>
+                        <div class="grid md:grid-cols-2 gap-3">${quizHtml}</div>
+                    </div>` : ''}
+
+                    <p class="text-xs text-center mt-4" style="color:var(--text-secondary);">
+                        Rapor ${new Date(data.generated_at).toLocaleString('tr-TR')} tarihinde AI tarafından üretilmiştir.
+                    </p>
+                </div>`;
+        }
 
         document.getElementById('studentForm').addEventListener('submit', async (e) => {
             e.preventDefault();
